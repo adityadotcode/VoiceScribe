@@ -1,0 +1,30 @@
+.page {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  min-height: 100svh;
+  padding: 32px 24px;
+  box-sizing: border-box;
+}
+
+.eyebrow {
+  margin: 0 0 8px;
+  font-size: 14px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text);
+}
+
+.lede {
+  max-width: 42rem;
+  margin: 0;
+}
+
+.status {
+  margin-top: 24px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  background: var(--code-bg);
+  color: var(--text-h);
+}

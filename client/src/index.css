@@ -1,0 +1,31 @@
+:root {
+  --text: #4b5563;
+  --text-h: #111827;
+  --bg: #f8fafc;
+  --code-bg: #eef2ff;
+  --sans: system-ui, 'Segoe UI', Roboto, sans-serif;
+
+  font: 18px/150% var(--sans);
+  color: var(--text);
+  background: var(--bg);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
+
+body {
+  margin: 0;
+}
+
+h1 {
+  margin: 0 0 16px;
+  font-size: 48px;
+  font-weight: 600;
+  color: var(--text-h);
+}
+
+@media (max-width: 720px) {
+  h1 {
+    font-size: 36px;
+  }
+}
