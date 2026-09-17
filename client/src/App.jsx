@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import AudioRecorder from './AudioRecorder.jsx'
 import './App.css'
 
 function App() {
@@ -29,6 +30,7 @@ function App() {
         approves it before anything is saved.
       </p>
       <p className="status">{apiStatus}</p>
+      <AudioRecorder />
     </main>
   )
 }
