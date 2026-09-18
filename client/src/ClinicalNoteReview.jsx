@@ -7,94 +7,68 @@ import { useEffect, useReducer, useRef, useState } from 'react'
 const STORAGE_KEY = 'voicescribe_draft_note'
 
 const STATUS = {
-  DRAFT: 'Draft',
-  REVIEWED: 'Reviewed',
+  DRAFT:    'Draft',
   APPROVED: 'Approved',
 }
 
-/**
- * Source evidence: maps symptom/field keywords found in the transcript
- * to the verbatim phrase that supports them.
- *
- * Built at runtime from the actual transcript — nothing is invented.
- * If no evidence phrase is found for a value, nothing is shown.
- */
+// ---------------------------------------------------------------------------
+// Evidence map — built from the real transcript, nothing invented
+// ---------------------------------------------------------------------------
 function buildEvidenceMap(transcript) {
   if (!transcript) return {}
-
-  const t = transcript.toLowerCase()
   const evidence = {}
-
-  // Ordered pairs of [keyword-to-match-in-note-value, phrase-to-search-in-transcript]
   const PATTERNS = [
-    ['fever',   /fever[^.]*?(?:\.|$)/i],
-    ['cough',   /cough[^.]*?(?:\.|$)/i],
-    ['fatigue', /(?:tired|fatigue|exhausted)[^.]*?(?:\.|$)/i],
-    ['tired',   /(?:tired|fatigue|exhausted)[^.]*?(?:\.|$)/i],
-    ['pain',    /pain[^.]*?(?:\.|$)/i],
-    ['headache',/headache[^.]*?(?:\.|$)/i],
-    ['nausea',  /nausea[^.]*?(?:\.|$)/i],
-    ['vomit',   /vomit[^.]*?(?:\.|$)/i],
-    ['diarrhea',/diarr?hoe?a[^.]*?(?:\.|$)/i],
-    ['breathless', /breath[^.]*?(?:\.|$)/i],
-    ['shortness of breath', /breath[^.]*?(?:\.|$)/i],
+    ['fever',                /fever[^.]*?(?:\.|$)/i],
+    ['cough',                /cough[^.]*?(?:\.|$)/i],
+    ['fatigue',              /(?:tired|fatigue|exhausted)[^.]*?(?:\.|$)/i],
+    ['tired',                /(?:tired|fatigue|exhausted)[^.]*?(?:\.|$)/i],
+    ['pain',                 /pain[^.]*?(?:\.|$)/i],
+    ['headache',             /headache[^.]*?(?:\.|$)/i],
+    ['nausea',               /nausea[^.]*?(?:\.|$)/i],
+    ['vomit',                /vomit[^.]*?(?:\.|$)/i],
+    ['diarrhea',             /diarr?hoe?a[^.]*?(?:\.|$)/i],
+    ['breathless',           /breath[^.]*?(?:\.|$)/i],
+    ['shortness of breath',  /breath[^.]*?(?:\.|$)/i],
   ]
-
   for (const [key, pattern] of PATTERNS) {
     const match = transcript.match(pattern)
     if (match) {
-      // Trim whitespace and trailing punctuation for a clean quote
       const phrase = match[0].trim().replace(/\.$/, '')
       if (phrase) evidence[key.toLowerCase()] = phrase
     }
   }
-
   return evidence
 }
 
 // ---------------------------------------------------------------------------
 // Reducer
 // ---------------------------------------------------------------------------
-
 function noteReducer(state, action) {
   switch (action.type) {
     case 'SET_FIELD':
       return { ...state, [action.field]: action.value }
-
     case 'SET_PATIENT_FIELD':
-      return {
-        ...state,
-        patient: { ...state.patient, [action.field]: action.value },
-      }
-
+      return { ...state, patient: { ...state.patient, [action.field]: action.value } }
     case 'SET_ARRAY_ITEM': {
       const arr = [...state[action.field]]
       arr[action.index] = action.value
       return { ...state, [action.field]: arr }
     }
-
     case 'ADD_ARRAY_ITEM':
       return { ...state, [action.field]: [...state[action.field], ''] }
-
-    case 'REMOVE_ARRAY_ITEM': {
-      const arr = state[action.field].filter((_, i) => i !== action.index)
-      return { ...state, [action.field]: arr }
-    }
-
+    case 'REMOVE_ARRAY_ITEM':
+      return { ...state, [action.field]: state[action.field].filter((_, i) => i !== action.index) }
     case 'RESET':
       return action.note
-
     default:
       return state
   }
 }
 
 // ---------------------------------------------------------------------------
-// Sub-components
+// Small reusable form elements
 // ---------------------------------------------------------------------------
-
-/** A labelled text input */
-function Field({ label, id, value, onChange, placeholder, required }) {
+function Field({ label, id, value, onChange, placeholder, required, disabled }) {
   return (
     <div className="cnr-field">
       <label htmlFor={id} className="cnr-label">
@@ -108,14 +82,14 @@ function Field({ label, id, value, onChange, placeholder, required }) {
         value={value ?? ''}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder || ''}
+        disabled={disabled}
         aria-required={required ? 'true' : undefined}
       />
     </div>
   )
 }
 
-/** A labelled textarea */
-function TextArea({ label, id, value, onChange, placeholder, rows = 3 }) {
+function TextArea({ label, id, value, onChange, placeholder, rows = 3, disabled }) {
   return (
     <div className="cnr-field">
       <label htmlFor={id} className="cnr-label">{label}</label>
@@ -126,27 +100,20 @@ function TextArea({ label, id, value, onChange, placeholder, rows = 3 }) {
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder || ''}
         rows={rows}
+        disabled={disabled}
       />
     </div>
   )
 }
 
-/**
- * An editable list of strings with optional inline evidence quotes.
- * Evidence is sourced from the transcript only — never invented.
- */
-function EditableList({ label, fieldKey, items, dispatch, evidenceMap }) {
+function EditableList({ label, fieldKey, items, dispatch, evidenceMap, disabled }) {
   return (
     <div className="cnr-field">
       <span className="cnr-label">{label}</span>
-      {items.length === 0 && (
-        <p className="cnr-empty">None recorded</p>
-      )}
+      {items.length === 0 && <p className="cnr-empty">None recorded</p>}
       <ul className="cnr-list">
         {items.map((item, idx) => {
-          const evidence = evidenceMap
-            ? evidenceMap[(item || '').toLowerCase().trim()]
-            : null
+          const evidence = evidenceMap?.[( item || '').toLowerCase().trim()]
           return (
             <li key={idx} className="cnr-list-item">
               <div className="cnr-list-row">
@@ -155,22 +122,20 @@ function EditableList({ label, fieldKey, items, dispatch, evidenceMap }) {
                   type="text"
                   value={item}
                   aria-label={`${label} item ${idx + 1}`}
+                  disabled={disabled}
                   onChange={(e) =>
                     dispatch({ type: 'SET_ARRAY_ITEM', field: fieldKey, index: idx, value: e.target.value })
                   }
                 />
-                <button
-                  type="button"
-                  className="cnr-icon-btn cnr-remove-btn"
-                  aria-label={`Remove ${item || 'item'}`}
-                  onClick={() =>
-                    dispatch({ type: 'REMOVE_ARRAY_ITEM', field: fieldKey, index: idx })
-                  }
-                >
-                  ✕
-                </button>
+                {!disabled && (
+                  <button
+                    type="button"
+                    className="cnr-icon-btn cnr-remove-btn"
+                    aria-label={`Remove ${item || 'item'}`}
+                    onClick={() => dispatch({ type: 'REMOVE_ARRAY_ITEM', field: fieldKey, index: idx })}
+                  >✕</button>
+                )}
               </div>
-              {/* Source evidence — only shown when found in the transcript */}
               {evidence && (
                 <p className="cnr-evidence">
                   <span className="cnr-evidence-icon" aria-hidden="true">🔍</span>
@@ -181,149 +146,237 @@ function EditableList({ label, fieldKey, items, dispatch, evidenceMap }) {
           )
         })}
       </ul>
-      <button
-        type="button"
-        className="cnr-add-btn"
-        onClick={() => dispatch({ type: 'ADD_ARRAY_ITEM', field: fieldKey })}
-      >
-        + Add item
-      </button>
+      {!disabled && (
+        <button
+          type="button"
+          className="cnr-add-btn"
+          onClick={() => dispatch({ type: 'ADD_ARRAY_ITEM', field: fieldKey })}
+        >+ Add item</button>
+      )}
     </div>
   )
 }
 
 // ---------------------------------------------------------------------------
+// API helpers
+// ---------------------------------------------------------------------------
+async function apiSave(consultationId, payload) {
+  if (consultationId) {
+    const res = await fetch(`/api/consultations/${consultationId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    })
+    return res.json()
+  }
+  const res = await fetch('/api/consultations', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
+  return res.json()
+}
+
+// ---------------------------------------------------------------------------
 // Main component
 // ---------------------------------------------------------------------------
-
 /**
  * ClinicalNoteReview
  *
  * Props:
- *   note        {object}   - Structured clinical note (from Bedrock or demo data)
- *   transcript  {string}   - Original transcript text (read-only reference)
- *   isDemo      {boolean}  - When true, shows a DEMO DATA banner
- *   onBack      {function} - Called when the doctor clicks "← Back to recorder"
+ *   note                  {object}       Structured clinical note
+ *   transcript            {string}       Original transcript (read-only)
+ *   isDemo                {boolean}      Show DEMO DATA banner
+ *   bedrockFailed         {boolean}      True when Bedrock extraction failed;
+ *                                        shows a manual-entry notice
+ *   initialConsultationId {string|null}  MongoDB _id if opening a saved doc
+ *   onBack                {function}     Called on "← Back"
+ *   onSaved               {function(id)} Called after every successful API save
  */
-function ClinicalNoteReview({ note, transcript, isDemo = false, onBack }) {
-  const [noteState, dispatch] = useReducer(noteReducer, note)
+function ClinicalNoteReview({
+  note,
+  transcript,
+  isDemo = false,
+  bedrockFailed = false,
+  initialConsultationId = null,
+  onBack,
+  onSaved,
+}) {
+  const [noteState, dispatch]   = useReducer(noteReducer, note)
   const [noteStatus, setNoteStatus] = useState(STATUS.DRAFT)
+  const [consultationId, setConsultationId] = useState(initialConsultationId)
+  const [isSaving, setIsSaving] = useState(false)
   const [validationError, setValidationError] = useState('')
-  const [saveMessage, setSaveMessage] = useState('')
+  const [saveMessage, setSaveMessage]  = useState('')
+  const [saveError, setSaveError]      = useState('')
   const saveTimerRef = useRef(null)
 
-  // On mount, attempt to restore a saved draft from localStorage
+  // Restore draft from localStorage on first mount (same transcript prefix)
   useEffect(() => {
+    if (initialConsultationId) return  // opened from history — don't overwrite
     try {
       const saved = localStorage.getItem(STORAGE_KEY)
       if (saved) {
         const parsed = JSON.parse(saved)
-        // Only restore if it matches the current session (same transcript prefix)
         if (parsed && parsed._transcript === transcript?.slice(0, 80)) {
           dispatch({ type: 'RESET', note: parsed })
           setNoteStatus(parsed._status || STATUS.DRAFT)
+          if (parsed._id) setConsultationId(parsed._id)
         }
       }
-    } catch {
-      // Malformed localStorage data — ignore
-    }
-  }, [transcript])
+    } catch { /* malformed — ignore */ }
+  }, [transcript, initialConsultationId])
 
-  // Cleanup timer on unmount
+  // Initialise status when opening an already-approved doc from history
   useEffect(() => {
-    return () => clearTimeout(saveTimerRef.current)
-  }, [])
+    if (note?._status === 'approved' || note?.status === 'approved') {
+      setNoteStatus(STATUS.APPROVED)
+    }
+  }, [note])
+
+  useEffect(() => () => clearTimeout(saveTimerRef.current), [])
 
   const evidenceMap = buildEvidenceMap(transcript)
+  const isApproved  = noteStatus === STATUS.APPROVED
 
-  // -------------------------------------------------------------------------
-  // Actions
-  // -------------------------------------------------------------------------
-
-  function persistToLocalStorage(stateToSave, status) {
+  // ── localStorage mirror ──────────────────────────────────────────────────
+  function persistLocal(state, status, id) {
     try {
-      localStorage.setItem(
-        STORAGE_KEY,
-        JSON.stringify({
-          ...stateToSave,
-          _transcript: transcript?.slice(0, 80),
-          _status: status,
-        })
-      )
-    } catch {
-      // Storage quota exceeded or private browsing — fail silently
-    }
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({
+        ...state,
+        _transcript: transcript?.slice(0, 80),
+        _status: status,
+        _id: id ?? null,
+      }))
+    } catch { /* quota exceeded — fail silently */ }
   }
 
-  function saveDraft() {
-    persistToLocalStorage(noteState, noteStatus)
-    setSaveMessage('Draft saved.')
+  // ── Flash a timed message ────────────────────────────────────────────────
+  function flashMessage(msg) {
+    setSaveMessage(msg)
     clearTimeout(saveTimerRef.current)
-    saveTimerRef.current = setTimeout(() => setSaveMessage(''), 3000)
+    saveTimerRef.current = setTimeout(() => setSaveMessage(''), 4000)
   }
 
-  function approveNote() {
+  // ── Save draft ───────────────────────────────────────────────────────────
+  async function saveDraft() {
+    setIsSaving(true)
+    setSaveError('')
     setValidationError('')
 
-    // Basic validation: chief complaint should not be empty
+    const payload = { transcript, note: noteState, status: 'draft' }
+
+    try {
+      const data = await apiSave(consultationId, payload)
+      if (!data.success) {
+        setSaveError(data.message || 'Save failed.')
+        setIsSaving(false)
+        return
+      }
+      const id = data.consultation._id
+      setConsultationId(id)
+      persistLocal(noteState, STATUS.DRAFT, id)
+      flashMessage(`Draft saved. ID: ${id}`)
+      onSaved?.(id)
+    } catch {
+      setSaveError('Network error — draft not saved.')
+    }
+
+    setIsSaving(false)
+  }
+
+  // ── Approve ──────────────────────────────────────────────────────────────
+  async function approveNote() {
+    setValidationError('')
+    setSaveError('')
+
     if (!noteState.chief_complaint?.trim()) {
       setValidationError('Chief complaint is required before approving.')
       return
     }
 
-    setNoteStatus(STATUS.APPROVED)
-    persistToLocalStorage(noteState, STATUS.APPROVED)
-    setSaveMessage('')
+    setIsSaving(true)
+    const payload = { transcript, note: noteState, status: 'approved' }
+
+    try {
+      const data = await apiSave(consultationId, payload)
+      if (!data.success) {
+        setSaveError(data.message || 'Approval failed.')
+        setIsSaving(false)
+        return
+      }
+      const id = data.consultation._id
+      setConsultationId(id)
+      setNoteStatus(STATUS.APPROVED)
+      persistLocal(noteState, STATUS.APPROVED, id)
+      setSaveMessage(`✅ Approved and saved. ID: ${id}`)
+      onSaved?.(id)
+    } catch {
+      setSaveError('Network error — approval not saved.')
+    }
+
+    setIsSaving(false)
   }
 
-  const isApproved = noteStatus === STATUS.APPROVED
-
-  // -------------------------------------------------------------------------
-  // Render
-  // -------------------------------------------------------------------------
-
+  // ── Render ───────────────────────────────────────────────────────────────
   return (
     <div className="cnr-wrapper">
 
-      {/* ── AI draft banner ── */}
+      {/* AI draft banner */}
       <div className="cnr-draft-banner" role="status">
-        <span className="cnr-draft-icon" aria-hidden="true">⚠️</span>
+        <span aria-hidden="true">⚠️</span>
         AI-generated draft — Doctor review required
       </div>
 
-      {/* ── Demo data notice ── */}
+      {/* Demo notice */}
       {isDemo && (
         <div className="cnr-demo-banner" role="status">
-          <strong>DEMO DATA</strong> — This note was generated from a hardcoded
-          sample transcript for development purposes. It is not a real AI output.
+          <strong>DEMO DATA</strong> — Generated from a hardcoded sample transcript.
+          Not a real AI output.
         </div>
       )}
 
-      {/* ── Safety statement ── */}
+      {/* Bedrock extraction failed — manual entry required */}
+      {bedrockFailed && !isDemo && (
+        <div className="cnr-bedrock-failed-banner" role="alert">
+          <strong>Note extraction unavailable.</strong> The transcript has been preserved
+          in the panel on the right. Please review the transcript and fill in the
+          clinical note fields manually before approving.
+        </div>
+      )}
+
+      {/* Safety statement */}
       <p className="cnr-safety">
         VoiceScribe does not diagnose or prescribe. The doctor reviews and
         approves the documentation.
       </p>
 
-      {/* ── Status pill + back link ── */}
+      {/* Top bar */}
       <div className="cnr-topbar">
         <button type="button" className="cnr-back-btn" onClick={onBack}>
-          ← Back to recorder
+          ← Back
         </button>
-        <span className={`cnr-status-pill cnr-status-${noteStatus.toLowerCase()}`}>
-          {noteStatus}
-        </span>
+        <div className="cnr-topbar-right">
+          {consultationId && (
+            <span className="cnr-db-id" title="MongoDB document ID">
+              ID: <code>{consultationId}</code>
+            </span>
+          )}
+          <span className={`cnr-status-pill cnr-status-${noteStatus.toLowerCase()}`}>
+            {noteStatus}
+          </span>
+        </div>
       </div>
 
-      {/* ── Approved success state ── */}
+      {/* Approved banner */}
       {isApproved && (
         <div className="cnr-approved-banner" role="status">
-          <span aria-hidden="true">✅</span> Note approved and finalized. No further
-          changes are permitted.
+          <span aria-hidden="true">✅</span> Note approved and finalized.
+          No further changes are permitted.
         </div>
       )}
 
-      {/* ── Main two-column layout ── */}
+      {/* Two-column layout */}
       <div className="cnr-layout">
 
         {/* Left: editable note */}
@@ -331,157 +384,93 @@ function ClinicalNoteReview({ note, transcript, isDemo = false, onBack }) {
           <h2 className="cnr-panel-title">Clinical Note</h2>
 
           {/* Patient */}
-          <fieldset className="cnr-fieldset" disabled={isApproved}>
+          <fieldset className="cnr-fieldset">
             <legend className="cnr-legend">Patient</legend>
             <div className="cnr-row">
-              <Field
-                label="Name"
-                id="patient-name"
-                value={noteState.patient?.name}
+              <Field label="Name"   id="patient-name" value={noteState.patient?.name}
                 onChange={(v) => dispatch({ type: 'SET_PATIENT_FIELD', field: 'name', value: v })}
-                placeholder="Not stated"
-              />
-              <Field
-                label="Age"
-                id="patient-age"
-                value={noteState.patient?.age ?? ''}
+                placeholder="Not stated" disabled={isApproved} />
+              <Field label="Age"    id="patient-age"  value={noteState.patient?.age ?? ''}
                 onChange={(v) => dispatch({
-                  type: 'SET_PATIENT_FIELD',
-                  field: 'age',
+                  type: 'SET_PATIENT_FIELD', field: 'age',
                   value: v === '' ? null : Number(v),
                 })}
-                placeholder="Not stated"
-              />
-              <Field
-                label="Sex"
-                id="patient-sex"
-                value={noteState.patient?.sex}
+                placeholder="Not stated" disabled={isApproved} />
+              <Field label="Sex"    id="patient-sex"  value={noteState.patient?.sex}
                 onChange={(v) => dispatch({ type: 'SET_PATIENT_FIELD', field: 'sex', value: v })}
-                placeholder="Not stated"
-              />
+                placeholder="Not stated" disabled={isApproved} />
             </div>
           </fieldset>
 
-          {/* Core fields */}
-          <fieldset className="cnr-fieldset" disabled={isApproved}>
+          {/* Consultation */}
+          <fieldset className="cnr-fieldset">
             <legend className="cnr-legend">Consultation</legend>
-
-            <Field
-              label="Chief complaint"
-              id="chief-complaint"
+            <Field label="Chief complaint" id="chief-complaint"
               value={noteState.chief_complaint}
               onChange={(v) => dispatch({ type: 'SET_FIELD', field: 'chief_complaint', value: v })}
-              placeholder="Primary reason for visit"
-              required
-            />
-
-            <EditableList
-              label="Symptoms"
-              fieldKey="symptoms"
-              items={noteState.symptoms ?? []}
-              dispatch={dispatch}
-              evidenceMap={evidenceMap}
-            />
-
-            <Field
-              label="Duration / onset"
-              id="duration"
-              value={noteState.duration}
+              placeholder="Primary reason for visit" required disabled={isApproved} />
+            <EditableList label="Symptoms" fieldKey="symptoms"
+              items={noteState.symptoms ?? []} dispatch={dispatch}
+              evidenceMap={evidenceMap} disabled={isApproved} />
+            <Field label="Duration / onset" id="duration" value={noteState.duration}
               onChange={(v) => dispatch({ type: 'SET_FIELD', field: 'duration', value: v })}
-              placeholder="e.g. fever for 3 days"
-            />
-
-            <TextArea
-              label="Relevant history"
-              id="history"
-              value={noteState.history}
+              placeholder="e.g. fever for 3 days" disabled={isApproved} />
+            <TextArea label="Relevant history" id="history" value={noteState.history}
               onChange={(v) => dispatch({ type: 'SET_FIELD', field: 'history', value: v })}
               placeholder="Past medical history mentioned in the consultation"
-            />
+              disabled={isApproved} />
           </fieldset>
 
-          {/* Clinical */}
-          <fieldset className="cnr-fieldset" disabled={isApproved}>
+          {/* Clinical findings */}
+          <fieldset className="cnr-fieldset">
             <legend className="cnr-legend">Clinical findings</legend>
-
-            <EditableList
-              label="Observations"
-              fieldKey="observations"
-              items={noteState.observations ?? []}
-              dispatch={dispatch}
-              evidenceMap={evidenceMap}
-            />
-
-            <TextArea
-              label="Assessment"
-              id="assessment"
-              value={noteState.assessment}
+            <EditableList label="Observations" fieldKey="observations"
+              items={noteState.observations ?? []} dispatch={dispatch}
+              evidenceMap={evidenceMap} disabled={isApproved} />
+            <TextArea label="Assessment" id="assessment" value={noteState.assessment}
               onChange={(v) => dispatch({ type: 'SET_FIELD', field: 'assessment', value: v })}
               placeholder="Clinician's assessment as stated in the consultation"
-              rows={4}
-            />
-
-            <EditableList
-              label="Medications mentioned"
-              fieldKey="medications_mentioned"
-              items={noteState.medications_mentioned ?? []}
-              dispatch={dispatch}
-              evidenceMap={null}
-            />
-
-            <Field
-              label="Follow-up"
-              id="follow-up"
-              value={noteState.follow_up}
+              rows={4} disabled={isApproved} />
+            <EditableList label="Medications mentioned" fieldKey="medications_mentioned"
+              items={noteState.medications_mentioned ?? []} dispatch={dispatch}
+              evidenceMap={null} disabled={isApproved} />
+            <Field label="Follow-up" id="follow-up" value={noteState.follow_up}
               onChange={(v) => dispatch({ type: 'SET_FIELD', field: 'follow_up', value: v })}
               placeholder="Follow-up instructions stated in the consultation"
-            />
+              disabled={isApproved} />
           </fieldset>
 
           {/* Quality flags */}
-          <fieldset className="cnr-fieldset" disabled={isApproved}>
+          <fieldset className="cnr-fieldset">
             <legend className="cnr-legend">Quality flags</legend>
-
-            <EditableList
-              label="Missing information"
-              fieldKey="missing_information"
-              items={noteState.missing_information ?? []}
-              dispatch={dispatch}
-              evidenceMap={null}
-            />
-
-            <EditableList
-              label="Uncertain fields"
-              fieldKey="uncertain_fields"
-              items={noteState.uncertain_fields ?? []}
-              dispatch={dispatch}
-              evidenceMap={null}
-            />
+            <EditableList label="Missing information" fieldKey="missing_information"
+              items={noteState.missing_information ?? []} dispatch={dispatch}
+              evidenceMap={null} disabled={isApproved} />
+            <EditableList label="Uncertain fields" fieldKey="uncertain_fields"
+              items={noteState.uncertain_fields ?? []} dispatch={dispatch}
+              evidenceMap={null} disabled={isApproved} />
           </fieldset>
 
-          {/* Actions */}
+          {/* Action footer */}
           {!isApproved && (
             <div className="cnr-actions">
               {validationError && (
                 <p className="cnr-validation-error" role="alert">{validationError}</p>
               )}
+              {saveError && (
+                <p className="cnr-validation-error" role="alert">{saveError}</p>
+              )}
               {saveMessage && (
                 <p className="cnr-save-message" role="status">{saveMessage}</p>
               )}
               <div className="cnr-action-row">
-                <button
-                  type="button"
-                  className="cnr-btn cnr-btn-secondary"
-                  onClick={saveDraft}
-                >
-                  Save draft
+                <button type="button" className="cnr-btn cnr-btn-secondary"
+                  onClick={saveDraft} disabled={isSaving}>
+                  {isSaving ? 'Saving…' : 'Save draft'}
                 </button>
-                <button
-                  type="button"
-                  className="cnr-btn cnr-btn-primary"
-                  onClick={approveNote}
-                >
-                  Approve &amp; finalize
+                <button type="button" className="cnr-btn cnr-btn-primary"
+                  onClick={approveNote} disabled={isSaving}>
+                  {isSaving ? 'Saving…' : 'Approve & finalize'}
                 </button>
               </div>
             </div>
@@ -489,24 +478,23 @@ function ClinicalNoteReview({ note, transcript, isDemo = false, onBack }) {
 
           {isApproved && (
             <div className="cnr-actions">
-              <p className="cnr-save-message" role="status">
-                ✅ Approved on {new Date().toLocaleString()}
-              </p>
+              {saveMessage && (
+                <p className="cnr-save-message" role="status">{saveMessage}</p>
+              )}
             </div>
           )}
         </section>
 
-        {/* Right: transcript evidence panel */}
+        {/* Right: transcript panel */}
         <aside className="cnr-transcript-panel" aria-label="Original transcript">
           <h2 className="cnr-panel-title">Transcript evidence</h2>
           <p className="cnr-transcript-hint">
-            Read-only. Use this to verify each field against what was actually said.
+            Read-only. Verify each field against what was actually said.
           </p>
           <div className="cnr-transcript-box" tabIndex={0}>
             {transcript
               ? transcript
-              : <span className="cnr-empty">No transcript available.</span>
-            }
+              : <span className="cnr-empty">No transcript available.</span>}
           </div>
         </aside>
       </div>

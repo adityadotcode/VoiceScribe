@@ -1,87 +1,80 @@
 import { useEffect, useRef, useState } from 'react'
 
 // Preferred MIME types in priority order.
-// Each entry is checked with MediaRecorder.isTypeSupported before use.
 const RECORDER_MIME_TYPES = [
-  'audio/webm;codecs=opus', // Chromium: best quality, widely supported
-  'audio/webm',             // Chromium: fallback without explicit codec
-  'audio/ogg;codecs=opus',  // Firefox
-  'audio/mp4',              // Safari / iOS
+  'audio/webm;codecs=opus',
+  'audio/webm',
+  'audio/ogg;codecs=opus',
+  'audio/mp4',
 ]
 
 function getSupportedMimeType() {
-  if (typeof MediaRecorder === 'undefined') {
-    return ''
-  }
-
-  return RECORDER_MIME_TYPES.find((type) => MediaRecorder.isTypeSupported(type)) || ''
+  if (typeof MediaRecorder === 'undefined') return ''
+  return RECORDER_MIME_TYPES.find((t) => MediaRecorder.isTypeSupported(t)) || ''
 }
 
 function extensionFromMime(mimeType) {
   const normalized = (mimeType || '').split(';')[0]
-
-  if (normalized === 'audio/mp4') {
-    return 'm4a'
-  }
-
-  if (normalized === 'audio/ogg') {
-    return 'ogg'
-  }
-
+  if (normalized === 'audio/mp4') return 'm4a'
+  if (normalized === 'audio/ogg') return 'ogg'
   return 'webm'
 }
 
 /**
- * AudioRecorder handles mic capture, playback, S3 upload, and Amazon Transcribe.
+ * AudioRecorder — mic capture, playback, S3 upload, Amazon Transcribe.
  *
  * Props:
- *   onTranscriptReady(objectKey: string, transcript: string) — optional callback
- *     called once transcription completes successfully. App.jsx uses this to
- *     advance to the clinical note review screen.
+ *   onTranscriptReady(objectKey, transcript)
+ *     Called once transcription completes. App uses this to kick off Bedrock.
+ *
+ *   onStageChange(stage)
+ *     Called whenever the internal pipeline stage changes so App can mirror
+ *     progress in its own progress display.
+ *     Possible values: 'idle' | 'recording' | 'uploading' | 'transcribing' |
+ *                      'success' | 'error'
  */
-function AudioRecorder({ onTranscriptReady }) {
+function AudioRecorder({ onTranscriptReady, onStageChange }) {
   const mediaRecorderRef = useRef(null)
-  const chunksRef = useRef([])
-  const streamRef = useRef(null)
-  const playbackUrlRef = useRef('')
+  const chunksRef        = useRef([])
+  const streamRef        = useRef(null)
+  const playbackUrlRef   = useRef('')
 
-  const [status, setStatus] = useState('idle')
+  const [status, setStatus]           = useState('idle')
   const [errorMessage, setErrorMessage] = useState('')
-  const [audioBlob, setAudioBlob] = useState(null)
+  const [audioBlob, setAudioBlob]     = useState(null)
   const [playbackUrl, setPlaybackUrl] = useState('')
-  const [objectKey, setObjectKey] = useState('')
+  const [objectKey, setObjectKey]     = useState('')
+
+  // Mirror every status change to parent via onStageChange
+  function applyStatus(next) {
+    setStatus(next)
+    onStageChange?.(next)
+  }
 
   useEffect(() => {
     return () => {
       stopStream()
-      if (playbackUrlRef.current) {
-        URL.revokeObjectURL(playbackUrlRef.current)
-      }
+      if (playbackUrlRef.current) URL.revokeObjectURL(playbackUrlRef.current)
     }
   }, [])
 
   function stopStream() {
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach((track) => track.stop())
-      streamRef.current = null
-    }
+    streamRef.current?.getTracks().forEach((t) => t.stop())
+    streamRef.current = null
   }
 
   function replacePlaybackUrl(blob) {
-    if (playbackUrlRef.current) {
-      URL.revokeObjectURL(playbackUrlRef.current)
-    }
-
-    const nextUrl = URL.createObjectURL(blob)
-    playbackUrlRef.current = nextUrl
-    setPlaybackUrl(nextUrl)
+    if (playbackUrlRef.current) URL.revokeObjectURL(playbackUrlRef.current)
+    const url = URL.createObjectURL(blob)
+    playbackUrlRef.current = url
+    setPlaybackUrl(url)
   }
 
   async function startRecording() {
     setErrorMessage('')
     setObjectKey('')
     setAudioBlob(null)
-    setStatus('recording')
+    applyStatus('recording')
 
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
@@ -92,61 +85,39 @@ function AudioRecorder({ onTranscriptReady }) {
         ? new MediaRecorder(stream, { mimeType })
         : new MediaRecorder(stream)
 
-      chunksRef.current = []
+      chunksRef.current      = []
       mediaRecorderRef.current = recorder
 
-      recorder.ondataavailable = (event) => {
-        if (event.data.size > 0) {
-          chunksRef.current.push(event.data)
-        }
-      }
+      recorder.ondataavailable = (e) => { if (e.data.size > 0) chunksRef.current.push(e.data) }
 
       recorder.onerror = () => {
         stopStream()
-        setStatus('error')
+        applyStatus('error')
         setErrorMessage('Recording failed. Please try again.')
       }
 
       recorder.onstop = () => {
-        // All dataavailable events have already fired before onstop is called.
-        // Build the Blob only here, after every chunk has been collected.
-        const blob = new Blob(chunksRef.current, {
-          type: recorder.mimeType || 'audio/webm',
-        })
+        const blob = new Blob(chunksRef.current, { type: recorder.mimeType || 'audio/webm' })
         chunksRef.current = []
         stopStream()
-
-        // Sanity-check: log the blob so we can verify size > 0 in the console.
-        console.log(
-          '[AudioRecorder] recording complete —',
-          'type:', blob.type,
-          '| size:', blob.size, 'bytes'
-        )
-
+        console.log('[AudioRecorder] recording complete — type:', blob.type, '| size:', blob.size, 'bytes')
         setAudioBlob(blob)
         replacePlaybackUrl(blob)
-        setStatus('idle')
+        applyStatus('idle')
       }
 
-      // Pass a 100 ms timeslice so the browser flushes audio data to
-      // ondataavailable progressively throughout the recording.
-      // Without a timeslice, all data is buffered until stop(), and a
-      // very short or immediately-stopped recording can produce a
-      // valid-but-empty container that AWS Transcribe sees as 0-duration.
       recorder.start(100)
-    } catch (error) {
-      console.error(error)
+    } catch (err) {
+      console.error(err)
       stopStream()
-      setStatus('error')
+      applyStatus('error')
       setErrorMessage('Microphone access is required to record audio.')
     }
   }
 
   function stopRecording() {
-    const recorder = mediaRecorderRef.current
-    if (recorder && recorder.state === 'recording') {
-      recorder.stop()
-    }
+    const rec = mediaRecorderRef.current
+    if (rec?.state === 'recording') rec.stop()
   }
 
   function reRecord() {
@@ -163,90 +134,89 @@ function AudioRecorder({ onTranscriptReady }) {
 
   async function uploadRecording() {
     if (!audioBlob) {
-      setStatus('error')
+      applyStatus('error')
       setErrorMessage('Record audio before uploading.')
       return
     }
 
-    setStatus('uploading')
+    applyStatus('uploading')
     setErrorMessage('')
 
     const extension = extensionFromMime(audioBlob.type)
     const file = new File([audioBlob], `consultation.${extension}`, {
       type: audioBlob.type || 'audio/webm',
     })
-
     const formData = new FormData()
     formData.append('audio', file)
 
     try {
-      const response = await fetch('/api/audio', {
-        method: 'POST',
-        body: formData,
-      })
-      const data = await response.json()
+      const res  = await fetch('/api/audio', { method: 'POST', body: formData })
+      const data = await res.json()
 
-      if (!response.ok || !data.success) {
-        setStatus('error')
+      if (!res.ok || !data.success) {
+        applyStatus('error')
         setErrorMessage(data.message || 'Upload failed. Please try again.')
         return
       }
 
       const uploadedKey = data.objectKey
       setObjectKey(uploadedKey)
-      setStatus('transcribing')
-
-      // --- Transcribe step (additive — did not exist before) ---
+      applyStatus('transcribing')
       await transcribeRecording(uploadedKey)
-    } catch (error) {
-      console.error(error)
-      setStatus('error')
+    } catch (err) {
+      console.error(err)
+      applyStatus('error')
       setErrorMessage('Upload failed. Please try again.')
     }
   }
 
-  /** Calls POST /api/transcribe and, on success, invokes onTranscriptReady. */
   async function transcribeRecording(key) {
     try {
-      const response = await fetch('/api/transcribe', {
+      const res  = await fetch('/api/transcribe', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ objectKey: key }),
       })
-      const data = await response.json()
+      const data = await res.json()
 
-      if (!response.ok || !data.success) {
-        setStatus('error')
+      if (!res.ok || !data.success) {
+        applyStatus('error')
         setErrorMessage(data.message || 'Transcription failed. Please try again.')
         return
       }
 
-      setStatus('success')
-
-      // Hand off to parent (App) so it can advance to the review screen.
-      if (typeof onTranscriptReady === 'function') {
-        onTranscriptReady(key, data.transcript ?? '')
-      }
-    } catch (error) {
-      console.error(error)
-      setStatus('error')
+      // Stay in 'transcribing' visually — App will advance the stage to
+      // 'extracting' once it receives the transcript and calls Bedrock.
+      // We do NOT set 'success' here; App calls onTranscriptReady which
+      // takes over and drives the rest of the pipeline.
+      onTranscriptReady?.(key, data.transcript ?? '')
+    } catch (err) {
+      console.error(err)
+      applyStatus('error')
       setErrorMessage('Transcription failed. Please try again.')
     }
   }
 
-  const canRecord = status !== 'recording' && status !== 'uploading' && status !== 'transcribing'
-  const canStop = status === 'recording'
-  const canUpload = Boolean(audioBlob) && status !== 'recording' && status !== 'uploading' && status !== 'transcribing'
+  const busy       = status === 'recording' || status === 'uploading' || status === 'transcribing'
+  const canRecord  = !busy
+  const canStop    = status === 'recording'
+  const canUpload  = Boolean(audioBlob) && !busy
   const canReRecord = canRecord && (Boolean(audioBlob) || status === 'error' || status === 'success')
 
-  const statusLabel =
-    status === 'transcribing' ? 'transcribing (this may take up to 60 s)…' : status
+  const statusLabel = {
+    idle:         'idle',
+    recording:    'recording…',
+    uploading:    'uploading to S3…',
+    transcribing: 'transcribing (may take up to 60 s)…',
+    success:      'done',
+    error:        'error',
+  }[status] ?? status
 
   return (
     <section className="recorder" aria-label="Consultation audio recorder">
       <h2>Record consultation</h2>
       <p className="recorder-copy">
-        Record a short clip, play it back, then upload it privately to VoiceScribe.
+        Record the consultation, play it back, then click Upload &amp; Transcribe.
       </p>
 
       <p className={`recorder-state is-${status}`}>Status: {statusLabel}</p>
@@ -257,50 +227,37 @@ function AudioRecorder({ onTranscriptReady }) {
             Stop recording
           </button>
         ) : (
-          <button
-            type="button"
-            className="recorder-button"
-            onClick={startRecording}
-            disabled={!canRecord}
-          >
+          <button type="button" className="recorder-button" onClick={startRecording} disabled={!canRecord}>
             Start recording
           </button>
         )}
 
-        <button
-          type="button"
-          className="recorder-button secondary"
-          onClick={uploadRecording}
-          disabled={!canUpload}
-        >
-          {status === 'uploading' ? 'Uploading…' : status === 'transcribing' ? 'Transcribing…' : 'Upload & Transcribe'}
+        <button type="button" className="recorder-button secondary" onClick={uploadRecording} disabled={!canUpload}>
+          {status === 'uploading'    ? 'Uploading…'    :
+           status === 'transcribing' ? 'Transcribing…' :
+           'Upload & Transcribe'}
         </button>
 
-        <button
-          type="button"
-          className="recorder-button secondary"
-          onClick={reRecord}
-          disabled={!canReRecord}
-        >
+        <button type="button" className="recorder-button secondary" onClick={reRecord} disabled={!canReRecord}>
           Re-record
         </button>
       </div>
 
-      {playbackUrl ? (
+      {playbackUrl && (
         <audio className="recorder-player" controls src={playbackUrl}>
           Your browser does not support audio playback.
         </audio>
-      ) : null}
+      )}
 
-      {status === 'success' && objectKey ? (
+      {status === 'success' && objectKey && (
         <p className="recorder-success">
-          Uploaded object key: <code>{objectKey}</code>
+          Uploaded: <code>{objectKey}</code>
         </p>
-      ) : null}
+      )}
 
-      {status === 'error' && errorMessage ? (
-        <p className="recorder-error">{errorMessage}</p>
-      ) : null}
+      {status === 'error' && errorMessage && (
+        <p className="recorder-error" role="alert">{errorMessage}</p>
+      )}
     </section>
   )
 }
