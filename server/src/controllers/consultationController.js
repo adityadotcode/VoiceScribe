@@ -8,7 +8,14 @@ const Consultation = require('../models/Consultation');
 function parseBody(body) {
   const errors = [];
 
-  const { transcript, note, status } = body;
+  const {
+    transcript,
+    note,
+    status,
+    speakerUtterances,
+    detectedLanguages,
+    speakerRoleMapping,
+  } = body;
 
   if (transcript !== undefined && typeof transcript !== 'string') {
     errors.push('transcript must be a string');
@@ -22,14 +29,38 @@ function parseBody(body) {
     errors.push('status must be "draft" or "approved"');
   }
 
-  return { errors, transcript, note, status };
+  if (speakerUtterances !== undefined && !Array.isArray(speakerUtterances)) {
+    errors.push('speakerUtterances must be an array');
+  }
+
+  if (detectedLanguages !== undefined && !Array.isArray(detectedLanguages)) {
+    errors.push('detectedLanguages must be an array');
+  }
+
+  if (
+    speakerRoleMapping !== undefined &&
+    (typeof speakerRoleMapping !== 'object' || Array.isArray(speakerRoleMapping))
+  ) {
+    errors.push('speakerRoleMapping must be an object');
+  }
+
+  return {
+    errors,
+    transcript,
+    note,
+    status,
+    speakerUtterances,
+    detectedLanguages,
+    speakerRoleMapping,
+  };
 }
 
 // ---------------------------------------------------------------------------
 // POST /api/consultations
 // ---------------------------------------------------------------------------
 async function createConsultation(req, res) {
-  const { errors, transcript, note, status } = parseBody(req.body);
+  const { errors, transcript, note, status,
+          speakerUtterances, detectedLanguages, speakerRoleMapping } = parseBody(req.body);
 
   if (errors.length) {
     return res.status(400).json({ success: false, message: errors.join('; ') });
@@ -45,10 +76,13 @@ async function createConsultation(req, res) {
 
   try {
     const doc = await Consultation.create({
-      transcript: transcript ?? '',
-      note:       note ?? {},
-      status:     status ?? 'draft',
-      approvedAt: status === 'approved' ? new Date() : null,
+      transcript:         transcript         ?? '',
+      note:               note               ?? {},
+      status:             status             ?? 'draft',
+      approvedAt:         status === 'approved' ? new Date() : null,
+      speakerUtterances:  speakerUtterances  ?? [],
+      detectedLanguages:  detectedLanguages  ?? [],
+      speakerRoleMapping: speakerRoleMapping ?? {},
     });
 
     return res.status(201).json({ success: true, consultation: doc });
@@ -101,7 +135,8 @@ async function getConsultation(req, res) {
 // PUT /api/consultations/:id
 // ---------------------------------------------------------------------------
 async function updateConsultation(req, res) {
-  const { errors, transcript, note, status } = parseBody(req.body);
+  const { errors, transcript, note, status,
+          speakerUtterances, detectedLanguages, speakerRoleMapping } = parseBody(req.body);
 
   if (errors.length) {
     return res.status(400).json({ success: false, message: errors.join('; ') });
@@ -130,9 +165,13 @@ async function updateConsultation(req, res) {
       });
     }
 
-    if (transcript !== undefined) existing.transcript = transcript;
-    if (note       !== undefined) existing.note       = note;
-    if (status     !== undefined) {
+    if (transcript         !== undefined) existing.transcript         = transcript;
+    if (note               !== undefined) existing.note               = note;
+    if (speakerUtterances  !== undefined) existing.speakerUtterances  = speakerUtterances;
+    if (detectedLanguages  !== undefined) existing.detectedLanguages  = detectedLanguages;
+    if (speakerRoleMapping !== undefined) existing.speakerRoleMapping = speakerRoleMapping;
+
+    if (status !== undefined) {
       existing.status = status;
       if (status === 'approved' && !existing.approvedAt) {
         existing.approvedAt = new Date();

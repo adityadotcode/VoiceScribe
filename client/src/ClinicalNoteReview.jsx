@@ -291,6 +291,122 @@ function LanguageIndicator({ languages }) {
 }
 
 // ---------------------------------------------------------------------------
+// SpeakerView — conversation with role mapping
+// ---------------------------------------------------------------------------
+
+// Maps spk_0 / spk_1 to a display label (A / B) and a stable colour class.
+const SPEAKER_META = {
+  spk_0: { label: 'Speaker A', colorClass: 'spk-color-a' },
+  spk_1: { label: 'Speaker B', colorClass: 'spk-color-b' },
+}
+
+const ROLE_OPTIONS = ['Unknown', 'Patient', 'Clinician']
+
+/**
+ * SpeakerView
+ *
+ * Props:
+ *   utterances       {Array<{speaker, startTime, endTime, text}>}
+ *                    Chronological speaker utterances from Amazon Transcribe.
+ *                    Empty array → section hidden.
+ *   initialRoles     {object}  e.g. { spk_0: 'Patient', spk_1: 'Clinician' }
+ *                    Seeded from persisted speakerRoleMapping on reopen.
+ *   onRolesChange    {function(roles)}  Called whenever the doctor changes a role.
+ */
+function SpeakerView({ utterances, initialRoles = {}, onRolesChange }) {
+  // Initialise from persisted mapping; fall back to 'Unknown' for any missing key.
+  const [roles, setRoles] = useState(() => ({
+    spk_0: initialRoles?.spk_0 ?? 'Unknown',
+    spk_1: initialRoles?.spk_1 ?? 'Unknown',
+  }))
+
+  // When a saved consultation is (re-)opened the prop may arrive after mount.
+  // Sync whenever initialRoles reference changes (i.e. a different doc is opened).
+  useEffect(() => {
+    setRoles({
+      spk_0: initialRoles?.spk_0 ?? 'Unknown',
+      spk_1: initialRoles?.spk_1 ?? 'Unknown',
+    })
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialRoles?.spk_0, initialRoles?.spk_1])
+
+  if (!Array.isArray(utterances) || utterances.length === 0) return null
+
+  // Collect the distinct speakers that actually appear in this recording
+  const activeSpeakers = [...new Set(utterances.map((u) => u.speaker))].sort()
+
+  function formatTime(secs) {
+    const m = Math.floor(secs / 60)
+    const s = Math.floor(secs % 60)
+    return `${m}:${String(s).padStart(2, '0')}`
+  }
+
+  return (
+    <div className="spk-wrapper" aria-label="Conversation speakers">
+
+      {/* ── Header ── */}
+      <div className="spk-header">
+        <span className="spk-title">Conversation speakers</span>
+      </div>
+
+      {/* ── Safety notice ── */}
+      <p className="spk-notice">
+        Speaker voices are separated by Amazon Transcribe. Speaker identity is
+        not automatically determined — please assign roles manually if needed.
+      </p>
+
+      {/* ── Role pickers ── */}
+      <div className="spk-role-row" role="group" aria-label="Speaker role assignment">
+        {activeSpeakers.map((spk) => {
+          const meta = SPEAKER_META[spk] ?? { label: spk, colorClass: '' }
+          return (
+            <div key={spk} className={`spk-role-item ${meta.colorClass}`}>
+              <span className="spk-role-name">{meta.label}</span>
+              <select
+                className="spk-role-select"
+                value={roles[spk] ?? 'Unknown'}
+                aria-label={`Role for ${meta.label}`}
+                onChange={(e) => {
+                  const next = { ...roles, [spk]: e.target.value }
+                  setRoles(next)
+                  onRolesChange?.(next)
+                }}
+              >
+                {ROLE_OPTIONS.map((opt) => (
+                  <option key={opt} value={opt}>{opt}</option>
+                ))}
+              </select>
+            </div>
+          )
+        })}
+      </div>
+
+      {/* ── Utterance list ── */}
+      <ol className="spk-list" aria-label="Speaker utterances">
+        {utterances.map((u, idx) => {
+          const meta = SPEAKER_META[u.speaker] ?? { label: u.speaker, colorClass: '' }
+          const role = roles[u.speaker] ?? 'Unknown'
+          return (
+            <li key={idx} className={`spk-utterance ${meta.colorClass}`}>
+              <div className="spk-utterance-header">
+                <span className="spk-utterance-speaker">{meta.label}</span>
+                {role !== 'Unknown' && (
+                  <span className="spk-utterance-role">{role}</span>
+                )}
+                <span className="spk-utterance-time">
+                  {formatTime(u.startTime)}–{formatTime(u.endTime)}
+                </span>
+              </div>
+              <p className="spk-utterance-text">{u.text}</p>
+            </li>
+          )
+        })}
+      </ol>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
 // ExtractionSummary — pure calculation, no API calls
 // ---------------------------------------------------------------------------
 /**
@@ -376,6 +492,8 @@ function ClinicalNoteReview({
   isDemo = false,
   bedrockFailed = false,
   detectedLanguages = [],
+  speakerUtterances = [],
+  initialSpeakerRoleMapping = {},
   initialConsultationId = null,
   onBack,
   onSaved,
@@ -388,6 +506,12 @@ function ClinicalNoteReview({
   const [saveMessage, setSaveMessage]  = useState('')
   const [saveError, setSaveError]      = useState('')
   const saveTimerRef = useRef(null)
+
+  // Current speaker role mapping — updated live as the doctor changes selects.
+  // Seeded from initialSpeakerRoleMapping when a saved doc is reopened.
+  const [speakerRoleMapping, setSpeakerRoleMapping] = useState(
+    () => ({ spk_0: 'Unknown', spk_1: 'Unknown', ...initialSpeakerRoleMapping })
+  )
 
   // Approval checklist — one boolean per CHECKLIST_ITEMS entry.
   // Starts all-false; reset whenever the component represents a fresh draft.
@@ -460,7 +584,14 @@ function ClinicalNoteReview({
     setSaveError('')
     setValidationError('')
 
-    const payload = { transcript, note: noteState, status: 'draft' }
+    const payload = {
+      transcript,
+      note: noteState,
+      status: 'draft',
+      speakerUtterances,
+      detectedLanguages,
+      speakerRoleMapping,
+    }
 
     try {
       const data = await apiSave(consultationId, payload)
@@ -492,7 +623,14 @@ function ClinicalNoteReview({
     }
 
     setIsSaving(true)
-    const payload = { transcript, note: noteState, status: 'approved' }
+    const payload = {
+      transcript,
+      note: noteState,
+      status: 'approved',
+      speakerUtterances,
+      detectedLanguages,
+      speakerRoleMapping,
+    }
 
     try {
       const data = await apiSave(consultationId, payload)
@@ -718,6 +856,11 @@ function ClinicalNoteReview({
               ? transcript
               : <span className="cnr-empty">No transcript available.</span>}
           </div>
+          <SpeakerView
+            utterances={speakerUtterances}
+            initialRoles={speakerRoleMapping}
+            onRolesChange={setSpeakerRoleMapping}
+          />
         </aside>
       </div>
     </div>

@@ -37,6 +37,50 @@ const ConsultationSchema = new mongoose.Schema(
     },
     // Set once when the doctor clicks Approve & finalize
     approvedAt: { type: Date, default: null },
+
+    // ── Phase 4 / Phase 5 optional fields ────────────────────────────────
+    // All three default to empty so existing documents without these fields
+    // continue to load normally.
+
+    // Compact speaker utterances produced by buildSpeakerUtterances().
+    // Shape: [{ speaker: 'spk_0'|'spk_1', startTime, endTime, text }]
+    speakerUtterances: {
+      type: [
+        new mongoose.Schema(
+          {
+            speaker:   { type: String, required: true },
+            startTime: { type: Number, required: true },
+            endTime:   { type: Number, required: true },
+            text:      { type: String, default: '' },
+          },
+          { _id: false }
+        ),
+      ],
+      default: [],
+    },
+
+    // Languages detected by Amazon Transcribe IdentifyMultipleLanguages.
+    // Shape: [{ code: 'en-IN'|'hi-IN', duration: number|null }]
+    detectedLanguages: {
+      type: [
+        new mongoose.Schema(
+          {
+            code:     { type: String, required: true },
+            duration: { type: Number, default: null },
+          },
+          { _id: false }
+        ),
+      ],
+      default: [],
+    },
+
+    // Manual UI role mapping the doctor sets on the review screen.
+    // Shape: { spk_0: 'Unknown'|'Patient'|'Clinician', spk_1: ... }
+    // Stored as Mixed so any spk_* key is accepted without a fixed schema.
+    speakerRoleMapping: {
+      type:    mongoose.Schema.Types.Mixed,
+      default: {},
+    },
   },
   {
     // Adds createdAt and updatedAt automatically

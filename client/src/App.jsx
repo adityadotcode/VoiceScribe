@@ -67,6 +67,8 @@ function App() {
   const [bedrockFailed, setBedrockFailed]               = useState(false)
   const [activeConsultationId, setActiveConsultationId] = useState(null)
   const [detectedLanguages, setDetectedLanguages]       = useState([])
+  const [speakerUtterances, setSpeakerUtterances]       = useState([])
+  const [speakerRoleMapping, setSpeakerRoleMapping]     = useState({})
 
   // Bump to force Dashboard to re-fetch after a save/approve
   const [dashboardRefresh, setDashboardRefresh] = useState(0)
@@ -93,9 +95,10 @@ function App() {
   }
 
   // ── Transcript ready → call Bedrock ───────────────────────────────────────
-  async function handleTranscriptReady(objectKey, rawTranscript, langs = []) {
+  async function handleTranscriptReady(objectKey, rawTranscript, langs = [], utterances = []) {
     setTranscript(rawTranscript)
     setDetectedLanguages(langs)
+    setSpeakerUtterances(utterances)
     setPipelineStep('extracting')
     setPipelineError('')
 
@@ -162,6 +165,8 @@ function App() {
     setActiveConsultationId(null)
     setIsDemo(true)
     setDetectedLanguages([])
+    setSpeakerUtterances([])
+    setSpeakerRoleMapping({})
     setStage(STAGE.REVIEW)
   }
 
@@ -177,7 +182,9 @@ function App() {
       setBedrockFailed(false)
       setActiveConsultationId(c._id)
       setIsDemo(false)
-      setDetectedLanguages([])
+      setDetectedLanguages(c.detectedLanguages ?? [])
+      setSpeakerUtterances(c.speakerUtterances ?? [])
+      setSpeakerRoleMapping(c.speakerRoleMapping ?? {})
       setStage(STAGE.REVIEW)
     } catch {
       alert('Network error — could not load consultation.')
@@ -193,6 +200,8 @@ function App() {
     setActiveConsultationId(null)
     setIsDemo(false)
     setDetectedLanguages([])
+    setSpeakerUtterances([])
+    setSpeakerRoleMapping({})
     setPipelineStep('')
     setPipelineError('')
   }
@@ -272,6 +281,8 @@ function App() {
             isDemo={isDemo}
             bedrockFailed={bedrockFailed}
             detectedLanguages={detectedLanguages}
+            speakerUtterances={speakerUtterances}
+            initialSpeakerRoleMapping={speakerRoleMapping}
             initialConsultationId={activeConsultationId}
             onBack={handleBack}
             onSaved={handleSaved}
