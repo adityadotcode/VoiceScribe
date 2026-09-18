@@ -119,9 +119,6 @@
   overflow-y: auto;
 }
 
-/* ── Workspace hero ── */
-.workspace-hero { }
-
 .workspace-hero-title {
   font-size: 20px;
   font-weight: 700;
