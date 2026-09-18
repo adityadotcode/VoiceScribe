@@ -1177,3 +1177,100 @@
   color: var(--green);
   font-size: 13px;
 }
+
+/* ============================================================
+   EXTRACTION SUMMARY BAR
+   ============================================================ */
+
+.cnr-extraction-summary {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 11px 16px;
+  margin-bottom: 16px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
+}
+
+.cnr-summary-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-h);
+  margin-right: 4px;
+}
+
+.cnr-summary-demo-tag {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #0369a1;
+  background: #e0f2fe;
+  border: 1px solid #bae6fd;
+  padding: 2px 7px;
+  border-radius: 999px;
+}
+
+.cnr-summary-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.cnr-summary-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 3px 10px;
+  border-radius: 999px;
+}
+
+.cnr-summary-chip--ok {
+  background: var(--green-bg);
+  border: 1px solid var(--green-border);
+  color: var(--green);
+}
+
+.cnr-summary-chip--warn {
+  background: var(--amber-bg);
+  border: 1px solid var(--amber-border);
+  color: var(--amber);
+}
+
+.cnr-summary-chip--review {
+  background: #fef3c7;
+  border: 1px solid #fde68a;
+  color: #92400e;
+}
+
+/* ============================================================
+   QUALITY FLAGS FIELDSET — highlighted
+   ============================================================ */
+
+.cnr-fieldset--flags {
+  background: var(--amber-bg);
+  border: 1px solid var(--amber-border) !important;
+  border-radius: var(--radius-md);
+  padding: 14px 16px !important;
+  margin-bottom: 26px;
+}
+
+/* Override margin: the fieldset has internal padding now */
+.cnr-fieldset--flags .cnr-field { margin-bottom: 12px; }
+.cnr-fieldset--flags .cnr-field:last-child { margin-bottom: 0; }
+
+.cnr-legend--flags {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--amber);
+  border-bottom-color: var(--amber-border) !important;
+  padding-bottom: 8px;
+  margin-bottom: 14px;
+}

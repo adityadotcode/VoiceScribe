@@ -1,4 +1,4 @@
-import { useEffect, useReducer, useRef, useState } from 'react'
+import { useEffect, useMemo, useReducer, useRef, useState } from 'react'
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -175,6 +175,70 @@ async function apiSave(consultationId, payload) {
     body: JSON.stringify(payload),
   })
   return res.json()
+}
+
+// ---------------------------------------------------------------------------
+// ExtractionSummary — pure calculation, no API calls
+// ---------------------------------------------------------------------------
+/**
+ * Counts how many note fields have real content vs are missing or uncertain.
+ * Numbers are calculated from the actual note — nothing is hard-coded.
+ */
+function ExtractionSummary({ noteState, isDemo }) {
+  const summary = useMemo(() => {
+    const stringFields = [
+      noteState.patient?.name,
+      noteState.patient?.sex,
+      noteState.chief_complaint,
+      noteState.duration,
+      noteState.history,
+      noteState.assessment,
+      noteState.follow_up,
+    ]
+    const arrayFields = [
+      noteState.symptoms,
+      noteState.observations,
+      noteState.medications_mentioned,
+    ]
+    const agePresent = noteState.patient?.age !== null && noteState.patient?.age !== undefined && noteState.patient?.age !== ''
+
+    let extracted = 0
+    if (agePresent) extracted++
+    stringFields.forEach((f) => { if (f && String(f).trim()) extracted++ })
+    arrayFields.forEach((a) => { if (Array.isArray(a) && a.length > 0) extracted++ })
+
+    const missing  = noteState.missing_information?.length ?? 0
+    const uncertain = noteState.uncertain_fields?.length ?? 0
+
+    return { extracted, missing, uncertain }
+  }, [noteState])
+
+  return (
+    <div className="cnr-extraction-summary" aria-label="Extraction quality summary">
+      <span className="cnr-summary-title">Extraction summary</span>
+      {isDemo && <span className="cnr-summary-demo-tag">DEMO</span>}
+      <div className="cnr-summary-chips">
+        <span className="cnr-summary-chip cnr-summary-chip--ok">
+          ✓ {summary.extracted} field{summary.extracted !== 1 ? 's' : ''} extracted
+        </span>
+        {summary.missing > 0 && (
+          <span className="cnr-summary-chip cnr-summary-chip--warn">
+            ⚠ {summary.missing} field{summary.missing !== 1 ? 's' : ''} missing
+          </span>
+        )}
+        {summary.uncertain > 0 && (
+          <span className="cnr-summary-chip cnr-summary-chip--review">
+            ⚠ {summary.uncertain} field{summary.uncertain !== 1 ? 's' : ''} needs review
+          </span>
+        )}
+        {summary.missing === 0 && summary.uncertain === 0 && (
+          <span className="cnr-summary-chip cnr-summary-chip--ok">
+            ✓ No issues flagged
+          </span>
+        )}
+      </div>
+    </div>
+  )
 }
 
 // ---------------------------------------------------------------------------
@@ -376,6 +440,9 @@ function ClinicalNoteReview({
         </div>
       )}
 
+      {/* Extraction quality summary */}
+      <ExtractionSummary noteState={noteState} isDemo={isDemo} />
+
       {/* Two-column layout */}
       <div className="cnr-layout">
 
@@ -441,8 +508,8 @@ function ClinicalNoteReview({
           </fieldset>
 
           {/* Quality flags */}
-          <fieldset className="cnr-fieldset">
-            <legend className="cnr-legend">Quality flags</legend>
+          <fieldset className="cnr-fieldset cnr-fieldset--flags">
+            <legend className="cnr-legend cnr-legend--flags">⚠ Quality flags</legend>
             <EditableList label="Missing information" fieldKey="missing_information"
               items={noteState.missing_information ?? []} dispatch={dispatch}
               evidenceMap={null} disabled={isApproved} />
