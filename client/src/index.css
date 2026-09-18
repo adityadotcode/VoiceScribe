@@ -1,11 +1,54 @@
+/* ============================================================
+   Design tokens
+   ============================================================ */
 :root {
-  --text: #4b5563;
-  --text-h: #111827;
-  --bg: #f8fafc;
-  --code-bg: #eef2ff;
-  --sans: system-ui, 'Segoe UI', Roboto, sans-serif;
+  /* Brand */
+  --brand:        #2563eb;
+  --brand-dark:   #1d4ed8;
+  --brand-hover:  #1e40af;
+  --brand-light:  #eff6ff;
+  --brand-ring:   rgba(37, 99, 235, 0.18);
 
-  font: 18px/150% var(--sans);
+  /* Neutrals */
+  --text-h:     #0f172a;
+  --text:       #475569;
+  --text-sub:   #94a3b8;
+  --border:     #e2e8f0;
+  --border-mid: #cbd5e1;
+  --bg:         #f1f5f9;
+  --surface:    #ffffff;
+  --surface-2:  #f8fafc;
+
+  /* Status */
+  --green:        #15803d;
+  --green-mid:    #16a34a;
+  --green-bg:     #f0fdf4;
+  --green-border: #bbf7d0;
+  --amber:        #b45309;
+  --amber-mid:    #d97706;
+  --amber-bg:     #fffbeb;
+  --amber-border: #fde68a;
+  --red:          #b91c1c;
+  --red-bg:       #fef2f2;
+  --red-border:   #fecaca;
+
+  /* Shadow */
+  --shadow-sm:  0 1px 3px rgba(15,23,42,0.07), 0 1px 2px rgba(15,23,42,0.04);
+  --shadow-md:  0 4px 12px rgba(15,23,42,0.08), 0 2px 4px rgba(15,23,42,0.04);
+  --shadow-lg:  0 8px 24px rgba(15,23,42,0.10), 0 2px 6px rgba(15,23,42,0.05);
+
+  /* Radius */
+  --radius-sm:  6px;
+  --radius-md:  10px;
+  --radius-lg:  14px;
+  --radius-xl:  20px;
+
+  /* Typography */
+  --sans: 'Inter', system-ui, 'Segoe UI', Roboto, sans-serif;
+
+  font-size: 16px;
+  line-height: 1.6;
+  font-family: var(--sans);
   color: var(--text);
   background: var(--bg);
   font-synthesis: none;
@@ -13,19 +56,14 @@
   -webkit-font-smoothing: antialiased;
 }
 
-body {
-  margin: 0;
-}
+/* ── Reset ── */
+*, *::before, *::after { box-sizing: border-box; }
+body  { margin: 0; }
+h1, h2, h3 { color: var(--text-h); line-height: 1.25; margin: 0; }
 
-h1 {
-  margin: 0 0 16px;
-  font-size: 48px;
-  font-weight: 600;
-  color: var(--text-h);
-}
-
-@media (max-width: 720px) {
-  h1 {
-    font-size: 36px;
-  }
+/* ── Global focus ring ── */
+:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+  border-radius: 3px;
 }

@@ -25,8 +25,6 @@ const DEMO_NOTE = {
   uncertain_fields: [],
 }
 
-// Empty note used when Bedrock extraction fails — preserves the transcript
-// so the doctor can fill the note manually.
 const BLANK_NOTE = {
   patient: { name: '', age: null, sex: '' },
   chief_complaint: '',
@@ -42,20 +40,23 @@ const BLANK_NOTE = {
 }
 
 // ---------------------------------------------------------------------------
-// Pipeline stages
-//
-//  'record'     → recorder visible, no active pipeline run
-//  'processing' → pipeline is running (upload / transcribe / extract)
-//  'review'     → ClinicalNoteReview visible
+// Stages
 // ---------------------------------------------------------------------------
 const STAGE = { RECORD: 'record', PROCESSING: 'processing', REVIEW: 'review' }
 
-// Human-readable labels for each pipeline step shown in the progress UI
 const PIPELINE_STEPS = [
-  { key: 'uploading',   label: 'Uploading to S3' },
-  { key: 'transcribing',label: 'Transcribing audio' },
-  { key: 'extracting',  label: 'Extracting clinical note' },
-  { key: 'ready',       label: 'Ready for doctor review' },
+  { key: 'uploading',    label: 'Uploading to S3' },
+  { key: 'transcribing', label: 'Transcribing audio' },
+  { key: 'extracting',   label: 'Extracting clinical note' },
+  { key: 'ready',        label: 'Ready for doctor review' },
+]
+
+// Stepper steps mirror the pipeline stages
+const STEPPER_STEPS = [
+  { label: 'Record' },
+  { label: 'Transcribe' },
+  { label: 'Extract note' },
+  { label: 'Review & Approve' },
 ]
 
 // ---------------------------------------------------------------------------
@@ -65,18 +66,15 @@ function App() {
   const [apiStatus, setApiStatus] = useState('Checking API…')
   const [stage, setStage]         = useState(STAGE.RECORD)
 
-  // Pipeline progress (only meaningful while stage === 'processing')
-  const [pipelineStep, setPipelineStep]     = useState('')   // current step key
-  const [pipelineError, setPipelineError]   = useState('')   // per-step error message
+  const [pipelineStep, setPipelineStep]   = useState('')
+  const [pipelineError, setPipelineError] = useState('')
 
-  // Active review data
   const [transcript, setTranscript]                     = useState('')
   const [note, setNote]                                 = useState(null)
   const [isDemo, setIsDemo]                             = useState(false)
   const [bedrockFailed, setBedrockFailed]               = useState(false)
   const [activeConsultationId, setActiveConsultationId] = useState(null)
 
-  // Bump to force ConsultationHistory to re-fetch
   const [historyRefresh, setHistoryRefresh] = useState(0)
 
   // ── Health-check ──────────────────────────────────────────────────────────
@@ -87,16 +85,12 @@ function App() {
       .catch(() => setApiStatus('API is not reachable yet'))
   }, [])
 
-  // ── AudioRecorder internal stage changes ─────────────────────────────────
-  // Mirror 'uploading' and 'transcribing' from AudioRecorder into our
-  // processing progress display.
+  // ── AudioRecorder stage mirror ────────────────────────────────────────────
   function handleStageChange(recorderStage) {
     if (recorderStage === 'uploading' || recorderStage === 'transcribing') {
       setPipelineStep(recorderStage)
       setStage(STAGE.PROCESSING)
     }
-    // 'error' from recorder: recorder shows its own inline error; we return
-    // to the record screen so the doctor can re-record or re-upload.
     if (recorderStage === 'error') {
       setStage(STAGE.RECORD)
       setPipelineStep('')
@@ -104,9 +98,8 @@ function App() {
     }
   }
 
-  // ── AudioRecorder → transcription complete → call Bedrock ─────────────────
+  // ── Transcript ready → call Bedrock ───────────────────────────────────────
   async function handleTranscriptReady(objectKey, rawTranscript) {
-    // Transcription done — advance progress to Bedrock extraction
     setTranscript(rawTranscript)
     setPipelineStep('extracting')
     setPipelineError('')
@@ -120,18 +113,15 @@ function App() {
       const data = await res.json()
 
       if (!res.ok || !data.success) {
-        // Bedrock failed — open review with blank note + real transcript so
-        // the doctor can fill in the note manually. Nothing is lost.
         console.warn('[App] /api/extract-note failed:', data.message)
         setPipelineError(
-          `Clinical note extraction failed: ${data.message || 'unknown error'}. ` +
-          `The transcript has been preserved. Please fill in the note manually.`
+          `Note extraction failed: ${data.message || 'unknown error'}. ` +
+          `The transcript has been preserved — please fill in the note manually.`
         )
         setNote(BLANK_NOTE)
         setBedrockFailed(true)
         setActiveConsultationId(null)
         setIsDemo(false)
-        // Brief pause so the doctor can read the error before the screen changes
         await delay(2200)
         setPipelineStep('ready')
         await delay(600)
@@ -139,7 +129,6 @@ function App() {
         return
       }
 
-      // Success — populate review with Bedrock note
       setNote(data.note)
       setBedrockFailed(false)
       setActiveConsultationId(null)
@@ -174,7 +163,7 @@ function App() {
     return new Promise((resolve) => setTimeout(resolve, ms))
   }
 
-  // ── Demo shortcut (offline UI testing only) ───────────────────────────────
+  // ── Demo shortcut ─────────────────────────────────────────────────────────
   function loadDemo() {
     setTranscript(DEMO_TRANSCRIPT)
     setNote(DEMO_NOTE)
@@ -184,7 +173,7 @@ function App() {
     setStage(STAGE.REVIEW)
   }
 
-  // ── Open a saved consultation from history ────────────────────────────────
+  // ── Open from history ─────────────────────────────────────────────────────
   async function handleOpenConsultation(summary) {
     try {
       const res  = await fetch(`/api/consultations/${summary._id}`)
@@ -202,7 +191,7 @@ function App() {
     }
   }
 
-  // ── Back from review ──────────────────────────────────────────────────────
+  // ── Back ──────────────────────────────────────────────────────────────────
   function handleBack() {
     setStage(STAGE.RECORD)
     setTranscript('')
@@ -220,28 +209,38 @@ function App() {
     setHistoryRefresh((n) => n + 1)
   }
 
-  // ── Processing screen ─────────────────────────────────────────────────────
+  // ── Helpers ───────────────────────────────────────────────────────────────
+  /** Map recorder pipeline step key → 0-based stepper index */
+  function activePipelineIndex() {
+    const map = { uploading: 1, transcribing: 1, extracting: 2, ready: 3 }
+    return map[pipelineStep] ?? 0
+  }
+
+  // ==========================================================================
+  // PROCESSING SCREEN
+  // ==========================================================================
   if (stage === STAGE.PROCESSING) {
+    const activeIndex = PIPELINE_STEPS.findIndex((s) => s.key === pipelineStep)
+
     return (
       <main className="page">
-        <p className="eyebrow">Clinical documentation assistant</p>
-        <h1>VoiceScribe</h1>
+        <div className="hero" style={{ marginBottom: 0 }}>
+          <span className="hero-eyebrow">Clinical documentation assistant</span>
+          <h1>VoiceScribe</h1>
+        </div>
 
         <div className="pipeline-card">
-          <h2 className="pipeline-title">Processing consultation…</h2>
+          <p className="pipeline-title">Processing consultation…</p>
 
           <ol className="pipeline-steps" aria-label="Pipeline progress">
-            {PIPELINE_STEPS.map(({ key, label }) => {
-              const stepIndex    = PIPELINE_STEPS.findIndex((s) => s.key === key)
-              const activeIndex  = PIPELINE_STEPS.findIndex((s) => s.key === pipelineStep)
-              const isDone       = stepIndex < activeIndex
-              const isActive     = key === pipelineStep
-              const stateClass   = isDone ? 'is-done' : isActive ? 'is-active' : 'is-pending'
+            {PIPELINE_STEPS.map(({ key, label }, idx) => {
+              const isDone   = idx < activeIndex
+              const isActive = idx === activeIndex
+              const stateClass = isDone ? 'is-done' : isActive ? 'is-active' : ''
+              const icon = isDone ? '✓' : idx + 1
               return (
                 <li key={key} className={`pipeline-step ${stateClass}`}>
-                  <span className="pipeline-step-icon" aria-hidden="true">
-                    {isDone ? '✓' : isActive ? '◉' : '○'}
-                  </span>
+                  <span className="pipeline-step-icon" aria-hidden="true">{icon}</span>
                   {label}
                   {isActive && key !== 'ready' && (
                     <span className="pipeline-spinner" aria-hidden="true" />
@@ -261,12 +260,14 @@ function App() {
     )
   }
 
-  // ── Review screen ─────────────────────────────────────────────────────────
+  // ==========================================================================
+  // REVIEW SCREEN
+  // ==========================================================================
   if (stage === STAGE.REVIEW && note) {
     return (
       <main className="page page--review">
         <div className="page-header">
-          <p className="eyebrow">Clinical documentation assistant</p>
+          <span className="eyebrow">Clinical documentation assistant</span>
           <h1>VoiceScribe</h1>
         </div>
         <ClinicalNoteReview
@@ -282,43 +283,60 @@ function App() {
     )
   }
 
-  // ── Record screen (default) ───────────────────────────────────────────────
+  // ==========================================================================
+  // RECORD SCREEN (default)
+  // ==========================================================================
   return (
     <main className="page">
-      <p className="eyebrow">Clinical documentation assistant</p>
-      <h1>VoiceScribe</h1>
-      <p className="lede">
-        A doctor records a consultation, reviews the extracted note, and
-        approves it before anything is saved.
-      </p>
-      <p className="status">{apiStatus}</p>
 
-      <ol className="journey-steps" aria-label="Workflow steps">
-        <li className="journey-step is-active">Record</li>
-        <li className="journey-step">Upload &amp; Transcribe</li>
-        <li className="journey-step">Extract note</li>
-        <li className="journey-step">Review &amp; Approve</li>
+      {/* Hero */}
+      <div className="hero">
+        <span className="hero-eyebrow">Clinical documentation assistant</span>
+        <h1>VoiceScribe</h1>
+        <p className="hero-tagline">
+          Record a consultation, get an AI-drafted structured clinical note,
+          and let the doctor review and approve — before anything is saved.
+        </p>
+        <span className="hero-safety">
+          <span className="hero-safety-icon" aria-hidden="true">🔒</span>
+          VoiceScribe does not diagnose or prescribe.
+          The doctor reviews and approves all documentation.
+        </span>
+        <div>
+          <span className="api-chip">{apiStatus}</span>
+        </div>
+      </div>
+
+      {/* Workflow stepper */}
+      <ol className="stepper" aria-label="Workflow steps">
+        {STEPPER_STEPS.map(({ label }, idx) => (
+          <li key={label} className={`stepper-item ${idx === 0 ? 'is-active' : ''}`}>
+            <span className="stepper-circle" aria-hidden="true">{idx + 1}</span>
+            <span className="stepper-label">{label}</span>
+          </li>
+        ))}
       </ol>
 
+      {/* Recorder */}
       <AudioRecorder
         onTranscriptReady={handleTranscriptReady}
         onStageChange={handleStageChange}
       />
 
-      {/* Demo shortcut — development / offline testing only */}
+      {/* Demo shortcut — clearly secondary and dev-only */}
       <div className="demo-block">
-        <p className="demo-label">
-          ⚙️ Development shortcut — skip recording and load demo data
-        </p>
+        <p className="demo-label">⚙️ Dev shortcut — load demo data without recording</p>
         <button type="button" className="recorder-button secondary" onClick={loadDemo}>
           Load demo note
         </button>
       </div>
 
+      {/* Consultation history */}
       <ConsultationHistory
         onOpen={handleOpenConsultation}
         refreshTrigger={historyRefresh}
       />
+
     </main>
   )
 }
