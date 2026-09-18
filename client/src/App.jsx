@@ -106,7 +106,7 @@ function App() {
       const res  = await fetch('/api/extract-note', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ transcript: rawTranscript }),
+        body:    JSON.stringify({ transcript: rawTranscript, objectKey }),
       })
       const data = await res.json()
 
