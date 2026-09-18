@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
 
+// Preferred MIME types in priority order.
+// Each entry is checked with MediaRecorder.isTypeSupported before use.
 const RECORDER_MIME_TYPES = [
-  'audio/webm;codecs=opus',
-  'audio/webm',
-  'audio/mp4',
-  'audio/ogg;codecs=opus',
+  'audio/webm;codecs=opus', // Chromium: best quality, widely supported
+  'audio/webm',             // Chromium: fallback without explicit codec
+  'audio/ogg;codecs=opus',  // Firefox
+  'audio/mp4',              // Safari / iOS
 ]
 
 function getSupportedMimeType() {
@@ -98,17 +100,32 @@ function AudioRecorder() {
       }
 
       recorder.onstop = () => {
+        // All dataavailable events have already fired before onstop is called.
+        // Build the Blob only here, after every chunk has been collected.
         const blob = new Blob(chunksRef.current, {
           type: recorder.mimeType || 'audio/webm',
         })
         chunksRef.current = []
         stopStream()
+
+        // Sanity-check: log the blob so we can verify size > 0 in the console.
+        console.log(
+          '[AudioRecorder] recording complete —',
+          'type:', blob.type,
+          '| size:', blob.size, 'bytes'
+        )
+
         setAudioBlob(blob)
         replacePlaybackUrl(blob)
         setStatus('idle')
       }
 
-      recorder.start()
+      // Pass a 100 ms timeslice so the browser flushes audio data to
+      // ondataavailable progressively throughout the recording.
+      // Without a timeslice, all data is buffered until stop(), and a
+      // very short or immediately-stopped recording can produce a
+      // valid-but-empty container that AWS Transcribe sees as 0-duration.
+      recorder.start(100)
     } catch (error) {
       console.error(error)
       stopStream()

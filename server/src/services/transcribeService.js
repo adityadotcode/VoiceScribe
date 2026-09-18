@@ -10,6 +10,25 @@ const {
     region: awsRegion,
   });
   
+  // Maps the file extension in the S3 key to the MediaFormat value
+  // that Amazon Transcribe expects. Falls back to 'webm'.
+  const EXTENSION_TO_MEDIA_FORMAT = {
+    webm: 'webm',
+    ogg: 'ogg',
+    mp3: 'mp3',
+    mp4: 'mp4',
+    m4a: 'mp4',
+    wav: 'wav',
+    flac: 'flac',
+    aac: 'aac',
+    amr: 'amr',
+  };
+  
+  function mediaFormatFromKey(objectKey) {
+    const ext = (objectKey || '').split('.').pop().toLowerCase();
+    return EXTENSION_TO_MEDIA_FORMAT[ext] || 'webm';
+  }
+  
   function createJobName() {
     return `voicescribe-${Date.now()}`;
   }
@@ -20,6 +39,7 @@ const {
     }
   
     const jobName = createJobName();
+    const mediaFormat = mediaFormatFromKey(objectKey);
   
     const command = new StartTranscriptionJobCommand({
       TranscriptionJobName: jobName,
@@ -28,7 +48,7 @@ const {
         MediaFileUri: `s3://${s3BucketName}/${objectKey}`,
       },
   
-      MediaFormat: 'webm',
+      MediaFormat: mediaFormat,
   
       IdentifyMultipleLanguages: true,
   
@@ -69,12 +89,26 @@ const {
         }
   
         const transcriptData = await response.json();
-  
+
+        const transcript = transcriptData?.results?.transcripts?.[0]?.transcript ?? null;
+
+        if (transcript === null || transcript === '') {
+          // Log the full raw response so the shape is visible when the path resolves empty.
+          console.warn(
+            '[transcribeService] transcript string is empty or missing. Raw transcript data:',
+            JSON.stringify(transcriptData, null, 2)
+          );
+        }
+
         return {
           jobName,
           status: 'COMPLETED',
-          transcript: transcriptData.results?.transcripts?.[0]?.transcript || '',
-          rawResult: transcriptData,
+          // The extracted transcript string. Empty string means the audio had no
+          // recognisable speech; null means the expected JSON path was absent.
+          transcript: transcript ?? '',
+          // rawResult is omitted from the response by default. Uncomment the line
+          // below only when debugging the transcript JSON shape.
+          // rawResult: transcriptData,
         };
       }
   
