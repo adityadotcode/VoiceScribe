@@ -1,19 +1,19 @@
 import { useEffect, useState } from 'react'
 import AudioRecorder from './AudioRecorder.jsx'
 import ClinicalNoteReview from './ClinicalNoteReview.jsx'
-import ConsultationHistory from './ConsultationHistory.jsx'
+import Dashboard from './Dashboard.jsx'
 import './App.css'
 
 // ---------------------------------------------------------------------------
 // Demo data — ONLY for the offline "Load demo note" shortcut.
-// Never used in the real pipeline. Not presented as a real AI output.
+// Never used in the real pipeline. Not a real AI output.
 // ---------------------------------------------------------------------------
 const DEMO_TRANSCRIPT =
   "Hello, sir. I'm having a fever for the last three days and cough for two days. I also feel tired."
 
 const DEMO_NOTE = {
   patient: { name: '', age: null, sex: '' },
-  chief_complaint: 'fever',
+  chief_complaint: 'Fever for three days with cough',
   symptoms: ['fever', 'cough', 'fatigue'],
   duration: 'fever for three days; cough for two days',
   history: '',
@@ -21,7 +21,7 @@ const DEMO_NOTE = {
   assessment: '',
   medications_mentioned: [],
   follow_up: '',
-  missing_information: ['patient name', 'age', 'sex'],
+  missing_information: ['patient name', 'patient age', 'patient sex'],
   uncertain_fields: [],
 }
 
@@ -40,23 +40,15 @@ const BLANK_NOTE = {
 }
 
 // ---------------------------------------------------------------------------
-// Stages
+// Pipeline stages
 // ---------------------------------------------------------------------------
-const STAGE = { RECORD: 'record', PROCESSING: 'processing', REVIEW: 'review' }
+const STAGE = { DASHBOARD: 'dashboard', RECORDING: 'recording', PROCESSING: 'processing', REVIEW: 'review' }
 
 const PIPELINE_STEPS = [
-  { key: 'uploading',    label: 'Uploading to S3' },
-  { key: 'transcribing', label: 'Transcribing audio' },
-  { key: 'extracting',   label: 'Extracting clinical note' },
-  { key: 'ready',        label: 'Ready for doctor review' },
-]
-
-// Stepper steps mirror the pipeline stages
-const STEPPER_STEPS = [
-  { label: 'Record' },
-  { label: 'Transcribe' },
-  { label: 'Extract note' },
-  { label: 'Review & Approve' },
+  { key: 'uploading',    label: 'Uploading to S3'          },
+  { key: 'transcribing', label: 'Transcribing audio'        },
+  { key: 'extracting',   label: 'Extracting clinical note'  },
+  { key: 'ready',        label: 'Ready for doctor review'   },
 ]
 
 // ---------------------------------------------------------------------------
@@ -64,7 +56,7 @@ const STEPPER_STEPS = [
 // ---------------------------------------------------------------------------
 function App() {
   const [apiStatus, setApiStatus] = useState('Checking API…')
-  const [stage, setStage]         = useState(STAGE.RECORD)
+  const [stage, setStage]         = useState(STAGE.DASHBOARD)
 
   const [pipelineStep, setPipelineStep]   = useState('')
   const [pipelineError, setPipelineError] = useState('')
@@ -75,7 +67,8 @@ function App() {
   const [bedrockFailed, setBedrockFailed]               = useState(false)
   const [activeConsultationId, setActiveConsultationId] = useState(null)
 
-  const [historyRefresh, setHistoryRefresh] = useState(0)
+  // Bump to force Dashboard to re-fetch after a save/approve
+  const [dashboardRefresh, setDashboardRefresh] = useState(0)
 
   // ── Health-check ──────────────────────────────────────────────────────────
   useEffect(() => {
@@ -92,7 +85,7 @@ function App() {
       setStage(STAGE.PROCESSING)
     }
     if (recorderStage === 'error') {
-      setStage(STAGE.RECORD)
+      setStage(STAGE.RECORDING)
       setPipelineStep('')
       setPipelineError('')
     }
@@ -106,9 +99,9 @@ function App() {
 
     try {
       const res  = await fetch('/api/extract-note', {
-        method: 'POST',
+        method:  'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ transcript: rawTranscript }),
+        body:    JSON.stringify({ transcript: rawTranscript }),
       })
       const data = await res.json()
 
@@ -123,8 +116,6 @@ function App() {
         setActiveConsultationId(null)
         setIsDemo(false)
         await delay(2200)
-        setPipelineStep('ready')
-        await delay(600)
         openReview()
         return
       }
@@ -134,7 +125,7 @@ function App() {
       setActiveConsultationId(null)
       setIsDemo(false)
       setPipelineStep('ready')
-      await delay(600)
+      await delay(500)
       openReview()
     } catch (err) {
       console.error('[App] extract-note network error:', err)
@@ -147,8 +138,6 @@ function App() {
       setActiveConsultationId(null)
       setIsDemo(false)
       await delay(2200)
-      setPipelineStep('ready')
-      await delay(600)
       openReview()
     }
   }
@@ -173,7 +162,7 @@ function App() {
     setStage(STAGE.REVIEW)
   }
 
-  // ── Open from history ─────────────────────────────────────────────────────
+  // ── Open from dashboard ───────────────────────────────────────────────────
   async function handleOpenConsultation(summary) {
     try {
       const res  = await fetch(`/api/consultations/${summary._id}`)
@@ -191,9 +180,9 @@ function App() {
     }
   }
 
-  // ── Back ──────────────────────────────────────────────────────────────────
+  // ── Back to dashboard ─────────────────────────────────────────────────────
   function handleBack() {
-    setStage(STAGE.RECORD)
+    setStage(STAGE.DASHBOARD)
     setTranscript('')
     setNote(null)
     setBedrockFailed(false)
@@ -203,17 +192,10 @@ function App() {
     setPipelineError('')
   }
 
-  // ── After save/approve ────────────────────────────────────────────────────
+  // ── After save/approve — refresh dashboard ────────────────────────────────
   function handleSaved(id) {
     setActiveConsultationId(id)
-    setHistoryRefresh((n) => n + 1)
-  }
-
-  // ── Helpers ───────────────────────────────────────────────────────────────
-  /** Map recorder pipeline step key → 0-based stepper index */
-  function activePipelineIndex() {
-    const map = { uploading: 1, transcribing: 1, extracting: 2, ready: 3 }
-    return map[pipelineStep] ?? 0
+    setDashboardRefresh((n) => n + 1)
   }
 
   // ==========================================================================
@@ -223,40 +205,44 @@ function App() {
     const activeIndex = PIPELINE_STEPS.findIndex((s) => s.key === pipelineStep)
 
     return (
-      <main className="page">
-        <div className="hero" style={{ marginBottom: 0 }}>
-          <span className="hero-eyebrow">Clinical documentation assistant</span>
-          <h1>VoiceScribe</h1>
-        </div>
+      <div className="app-shell">
+        <header className="app-topbar">
+          <div className="app-topbar-brand">
+            <span className="app-logo-mark" aria-hidden="true">VS</span>
+            <span className="app-brand-name">VoiceScribe</span>
+          </div>
+          <span className="app-topbar-sub">Clinical documentation assistant</span>
+        </header>
 
-        <div className="pipeline-card">
-          <p className="pipeline-title">Processing consultation…</p>
-
-          <ol className="pipeline-steps" aria-label="Pipeline progress">
-            {PIPELINE_STEPS.map(({ key, label }, idx) => {
-              const isDone   = idx < activeIndex
-              const isActive = idx === activeIndex
-              const stateClass = isDone ? 'is-done' : isActive ? 'is-active' : ''
-              const icon = isDone ? '✓' : idx + 1
-              return (
-                <li key={key} className={`pipeline-step ${stateClass}`}>
-                  <span className="pipeline-step-icon" aria-hidden="true">{icon}</span>
-                  {label}
-                  {isActive && key !== 'ready' && (
-                    <span className="pipeline-spinner" aria-hidden="true" />
-                  )}
-                </li>
-              )
-            })}
-          </ol>
-
-          {pipelineError && (
-            <div className="pipeline-error" role="alert">
-              <strong>Note:</strong> {pipelineError}
-            </div>
-          )}
-        </div>
-      </main>
+        <main className="page page--centered">
+          <div className="pipeline-card">
+            <p className="pipeline-title">Processing consultation…</p>
+            <ol className="pipeline-steps" aria-label="Pipeline progress">
+              {PIPELINE_STEPS.map(({ key, label }, idx) => {
+                const isDone   = idx < activeIndex
+                const isActive = idx === activeIndex
+                const cls = isDone ? 'is-done' : isActive ? 'is-active' : ''
+                return (
+                  <li key={key} className={`pipeline-step ${cls}`}>
+                    <span className="pipeline-step-icon" aria-hidden="true">
+                      {isDone ? '✓' : idx + 1}
+                    </span>
+                    {label}
+                    {isActive && key !== 'ready' && (
+                      <span className="pipeline-spinner" aria-hidden="true" />
+                    )}
+                  </li>
+                )
+              })}
+            </ol>
+            {pipelineError && (
+              <div className="pipeline-error" role="alert">
+                <strong>Note:</strong> {pipelineError}
+              </div>
+            )}
+          </div>
+        </main>
+      </div>
     )
   }
 
@@ -265,79 +251,127 @@ function App() {
   // ==========================================================================
   if (stage === STAGE.REVIEW && note) {
     return (
-      <main className="page page--review">
-        <div className="page-header">
-          <span className="eyebrow">Clinical documentation assistant</span>
-          <h1>VoiceScribe</h1>
-        </div>
-        <ClinicalNoteReview
-          note={note}
-          transcript={transcript}
-          isDemo={isDemo}
-          bedrockFailed={bedrockFailed}
-          initialConsultationId={activeConsultationId}
-          onBack={handleBack}
-          onSaved={handleSaved}
-        />
-      </main>
+      <div className="app-shell">
+        <header className="app-topbar">
+          <div className="app-topbar-brand">
+            <span className="app-logo-mark" aria-hidden="true">VS</span>
+            <span className="app-brand-name">VoiceScribe</span>
+          </div>
+          <span className="app-topbar-sub">Clinical documentation assistant</span>
+        </header>
+
+        <main className="page page--review">
+          <ClinicalNoteReview
+            note={note}
+            transcript={transcript}
+            isDemo={isDemo}
+            bedrockFailed={bedrockFailed}
+            initialConsultationId={activeConsultationId}
+            onBack={handleBack}
+            onSaved={handleSaved}
+          />
+        </main>
+      </div>
     )
   }
 
   // ==========================================================================
-  // RECORD SCREEN (default)
+  // RECORDING PANEL — shown inline in the workspace when recording is active
+  // ==========================================================================
+  const showRecorder = stage === STAGE.RECORDING
+
+  // ==========================================================================
+  // DASHBOARD (default)
   // ==========================================================================
   return (
-    <main className="page">
+    <div className="app-shell">
 
-      {/* Hero */}
-      <div className="hero">
-        <span className="hero-eyebrow">Clinical documentation assistant</span>
-        <h1>VoiceScribe</h1>
-        <p className="hero-tagline">
-          Record a consultation, get an AI-drafted structured clinical note,
-          and let the doctor review and approve — before anything is saved.
-        </p>
-        <span className="hero-safety">
-          <span className="hero-safety-icon" aria-hidden="true">🔒</span>
-          VoiceScribe does not diagnose or prescribe.
-          The doctor reviews and approves all documentation.
-        </span>
-        <div>
-          <span className="api-chip">{apiStatus}</span>
+      {/* ── Top bar ── */}
+      <header className="app-topbar">
+        <div className="app-topbar-brand">
+          <span className="app-logo-mark" aria-hidden="true">VS</span>
+          <span className="app-brand-name">VoiceScribe</span>
         </div>
-      </div>
+        <span className="app-topbar-sub">Clinical documentation assistant</span>
+        <div className="app-topbar-right">
+          <span className="app-api-dot" title={apiStatus} aria-label={`API status: ${apiStatus}`} />
+          <span className="app-api-label">{apiStatus}</span>
+        </div>
+      </header>
 
-      {/* Workflow stepper */}
-      <ol className="stepper" aria-label="Workflow steps">
-        {STEPPER_STEPS.map(({ label }, idx) => (
-          <li key={label} className={`stepper-item ${idx === 0 ? 'is-active' : ''}`}>
-            <span className="stepper-circle" aria-hidden="true">{idx + 1}</span>
-            <span className="stepper-label">{label}</span>
-          </li>
-        ))}
-      </ol>
+      <main className="app-workspace">
 
-      {/* Recorder */}
-      <AudioRecorder
-        onTranscriptReady={handleTranscriptReady}
-        onStageChange={handleStageChange}
-      />
+        {/* ── Left column: hero + recorder ── */}
+        <aside className="workspace-left">
 
-      {/* Demo shortcut — clearly secondary and dev-only */}
-      <div className="demo-block">
-        <p className="demo-label">⚙️ Dev shortcut — load demo data without recording</p>
-        <button type="button" className="recorder-button secondary" onClick={loadDemo}>
-          Load demo note
-        </button>
-      </div>
+          <div className="workspace-hero">
+            <h1 className="workspace-hero-title">
+              {showRecorder ? 'Recording consultation' : 'New consultation'}
+            </h1>
+            <p className="workspace-hero-sub">
+              Record a consultation and VoiceScribe will generate a structured
+              clinical note for your review.
+            </p>
+            <p className="workspace-safety">
+              <span aria-hidden="true">🔒</span>
+              VoiceScribe does not diagnose or prescribe.
+              All notes require doctor review and approval.
+            </p>
+          </div>
 
-      {/* Consultation history */}
-      <ConsultationHistory
-        onOpen={handleOpenConsultation}
-        refreshTrigger={historyRefresh}
-      />
+          {/* Workflow steps */}
+          <ol className="stepper" aria-label="Workflow steps">
+            {['Record', 'Transcribe', 'Extract note', 'Review & Approve'].map((label, idx) => (
+              <li key={label} className={`stepper-item ${idx === 0 && showRecorder ? 'is-active' : idx === 0 && !showRecorder ? 'is-idle' : ''}`}>
+                <span className="stepper-circle" aria-hidden="true">{idx + 1}</span>
+                <span className="stepper-label">{label}</span>
+              </li>
+            ))}
+          </ol>
 
-    </main>
+          {/* Recorder or "start" prompt */}
+          {showRecorder ? (
+            <AudioRecorder
+              onTranscriptReady={handleTranscriptReady}
+              onStageChange={handleStageChange}
+            />
+          ) : (
+            <div className="workspace-start-card">
+              <button
+                type="button"
+                className="ws-start-btn"
+                onClick={() => setStage(STAGE.RECORDING)}
+              >
+                <span className="ws-start-icon" aria-hidden="true">🎙</span>
+                Start recording
+              </button>
+              <p className="ws-start-hint">
+                Microphone access will be requested when you start.
+              </p>
+            </div>
+          )}
+
+          {/* Demo shortcut — clearly secondary, dev-only */}
+          <div className="demo-block">
+            <p className="demo-label">⚙️ Dev shortcut — load demo data without recording</p>
+            <button type="button" className="recorder-button secondary small" onClick={loadDemo}>
+              Load demo note
+            </button>
+          </div>
+
+        </aside>
+
+        {/* ── Right column: dashboard ── */}
+        <section className="workspace-right">
+          <Dashboard
+            onOpen={handleOpenConsultation}
+            onNewConsultation={() => setStage(STAGE.RECORDING)}
+            refreshTrigger={dashboardRefresh}
+          />
+        </section>
+
+      </main>
+    </div>
   )
 }
 

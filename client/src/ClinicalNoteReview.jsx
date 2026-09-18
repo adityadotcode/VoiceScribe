@@ -11,6 +11,14 @@ const STATUS = {
   APPROVED: 'Approved',
 }
 
+// The three statements the doctor must confirm before approving.
+// Stored as an ordered array so the index serves as the checkbox key.
+const CHECKLIST_ITEMS = [
+  'I reviewed the extracted information against the transcript.',
+  'I verified that the important fields are accurate.',
+  'I understand that VoiceScribe provides documentation assistance only and does not diagnose or prescribe.',
+]
+
 // ---------------------------------------------------------------------------
 // Evidence map — built from the real transcript, nothing invented
 // ---------------------------------------------------------------------------
@@ -178,6 +186,74 @@ async function apiSave(consultationId, payload) {
 }
 
 // ---------------------------------------------------------------------------
+// ApprovalChecklist
+// ---------------------------------------------------------------------------
+/**
+ * Three doctor-confirmation checkboxes required before Approve & Finalize.
+ *
+ * Props:
+ *   checked   {object}  { 0: bool, 1: bool, 2: bool }
+ *   onChange  {fn(idx)} toggle a single item
+ *   disabled  {bool}    true when consultation is already approved
+ *   approved  {bool}    true → show collapsed read-only approved state
+ */
+function ApprovalChecklist({ checked, onChange, disabled, approved }) {
+  const allChecked = CHECKLIST_ITEMS.every((_, i) => checked[i])
+
+  if (approved) {
+    return (
+      <div className="cnr-checklist cnr-checklist--approved" aria-label="Approval checklist">
+        <span className="cnr-checklist-approved-label">
+          <span aria-hidden="true">✅</span> Doctor review confirmed and note approved.
+        </span>
+      </div>
+    )
+  }
+
+  return (
+    <fieldset
+      className={`cnr-checklist ${allChecked ? 'cnr-checklist--complete' : ''}`}
+      aria-label="Approval checklist"
+      disabled={disabled}
+    >
+      <legend className="cnr-checklist-legend">
+        <span aria-hidden="true">📋</span> Doctor approval checklist
+        <span className="cnr-checklist-required-note">
+          — all items required before approving
+        </span>
+      </legend>
+
+      <ul className="cnr-checklist-list" role="list">
+        {CHECKLIST_ITEMS.map((label, idx) => (
+          <li key={idx} className="cnr-checklist-item">
+            <label className={`cnr-checklist-label ${checked[idx] ? 'is-checked' : ''}`}>
+              <input
+                type="checkbox"
+                className="cnr-checklist-input"
+                checked={checked[idx] ?? false}
+                onChange={() => onChange(idx)}
+                disabled={disabled}
+                aria-label={label}
+              />
+              <span className="cnr-checklist-box" aria-hidden="true">
+                {checked[idx] ? '✓' : ''}
+              </span>
+              <span className="cnr-checklist-text">{label}</span>
+            </label>
+          </li>
+        ))}
+      </ul>
+
+      {!allChecked && (
+        <p className="cnr-checklist-hint" aria-live="polite">
+          Complete all items above to enable Approve &amp; finalize.
+        </p>
+      )}
+    </fieldset>
+  )
+}
+
+// ---------------------------------------------------------------------------
 // ExtractionSummary — pure calculation, no API calls
 // ---------------------------------------------------------------------------
 /**
@@ -275,6 +351,16 @@ function ClinicalNoteReview({
   const [saveError, setSaveError]      = useState('')
   const saveTimerRef = useRef(null)
 
+  // Approval checklist — one boolean per CHECKLIST_ITEMS entry.
+  // Starts all-false; reset whenever the component represents a fresh draft.
+  const [checklist, setChecklist] = useState({ 0: false, 1: false, 2: false })
+
+  function toggleChecklistItem(idx) {
+    setChecklist((prev) => ({ ...prev, [idx]: !prev[idx] }))
+  }
+
+  const allChecklistChecked = CHECKLIST_ITEMS.every((_, i) => checklist[i])
+
   // Restore draft from localStorage on first mount (same transcript prefix)
   useEffect(() => {
     if (initialConsultationId) return  // opened from history — don't overwrite
@@ -297,6 +383,14 @@ function ClinicalNoteReview({
       setNoteStatus(STATUS.APPROVED)
     }
   }, [note])
+
+  // Reset checklist whenever a fresh (non-approved) draft is opened.
+  // If opened from history and already approved, keep checklist irrelevant.
+  useEffect(() => {
+    if (!initialConsultationId) {
+      setChecklist({ 0: false, 1: false, 2: false })
+    }
+  }, [initialConsultationId, transcript])
 
   useEffect(() => () => clearTimeout(saveTimerRef.current), [])
 
@@ -530,13 +624,28 @@ function ClinicalNoteReview({
               {saveMessage && (
                 <p className="cnr-save-message" role="status">{saveMessage}</p>
               )}
+
+              {/* Approval checklist — must be complete before approving */}
+              <ApprovalChecklist
+                checked={checklist}
+                onChange={toggleChecklistItem}
+                disabled={isSaving}
+                approved={false}
+              />
+
               <div className="cnr-action-row">
                 <button type="button" className="cnr-btn cnr-btn-secondary"
                   onClick={saveDraft} disabled={isSaving}>
                   {isSaving ? 'Saving…' : 'Save draft'}
                 </button>
-                <button type="button" className="cnr-btn cnr-btn-primary"
-                  onClick={approveNote} disabled={isSaving}>
+                <button
+                  type="button"
+                  className="cnr-btn cnr-btn-primary"
+                  onClick={approveNote}
+                  disabled={isSaving || !allChecklistChecked}
+                  title={!allChecklistChecked ? 'Complete the approval checklist to enable this button.' : undefined}
+                  aria-describedby={!allChecklistChecked ? 'checklist-hint' : undefined}
+                >
                   {isSaving ? 'Saving…' : 'Approve & finalize'}
                 </button>
               </div>
@@ -545,6 +654,13 @@ function ClinicalNoteReview({
 
           {isApproved && (
             <div className="cnr-actions">
+              {/* Collapsed approved-state checklist */}
+              <ApprovalChecklist
+                checked={{ 0: true, 1: true, 2: true }}
+                onChange={() => {}}
+                disabled
+                approved
+              />
               {saveMessage && (
                 <p className="cnr-save-message" role="status">{saveMessage}</p>
               )}
