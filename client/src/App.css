@@ -1,3 +1,7 @@
+/* ============================================================
+   Base page layout
+   ============================================================ */
+
 .page {
   display: flex;
   flex-direction: column;
@@ -7,6 +11,36 @@
   padding: 32px 24px;
   box-sizing: border-box;
 }
+
+.page--review {
+  justify-content: flex-start;
+  align-items: stretch;
+  padding: 24px clamp(16px, 4vw, 48px);
+  max-width: 1400px;
+  margin: 0 auto;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.page-header {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.page-header h1 {
+  margin: 0;
+  font-size: 28px;
+}
+
+.page-header .eyebrow {
+  margin: 0;
+}
+
+/* ============================================================
+   Record screen typography & helpers
+   ============================================================ */
 
 .eyebrow {
   margin: 0 0 8px;
@@ -19,6 +53,7 @@
 .lede {
   max-width: 42rem;
   margin: 0;
+  text-align: center;
 }
 
 .status {
@@ -28,6 +63,58 @@
   background: var(--code-bg);
   color: var(--text-h);
 }
+
+/* ============================================================
+   Journey steps
+   ============================================================ */
+
+.journey-steps {
+  display: flex;
+  gap: 0;
+  list-style: none;
+  margin: 24px 0 0;
+  padding: 0;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid #dbe3ef;
+  counter-reset: step;
+}
+
+.journey-step {
+  counter-increment: step;
+  flex: 1;
+  padding: 10px 8px;
+  font-size: 13px;
+  text-align: center;
+  color: #6b7280;
+  background: #f8fafc;
+  border-right: 1px solid #dbe3ef;
+  position: relative;
+}
+
+.journey-step:last-child {
+  border-right: 0;
+}
+
+.journey-step::before {
+  content: counter(step) '. ';
+  font-weight: 600;
+  color: #9ca3af;
+}
+
+.journey-step.is-active {
+  background: #eff6ff;
+  color: #1d4ed8;
+  font-weight: 600;
+}
+
+.journey-step.is-active::before {
+  color: #1d4ed8;
+}
+
+/* ============================================================
+   Recorder
+   ============================================================ */
 
 .recorder {
   width: min(36rem, 100%);
@@ -112,4 +199,435 @@
   display: inline-block;
   margin-top: 4px;
   word-break: break-all;
+}
+
+/* ============================================================
+   Demo shortcut block
+   ============================================================ */
+
+.demo-block {
+  width: min(36rem, 100%);
+  margin-top: 24px;
+  padding: 16px 20px;
+  border: 1px dashed #cbd5e1;
+  border-radius: 12px;
+  background: #f8fafc;
+  text-align: left;
+  box-sizing: border-box;
+}
+
+.demo-label {
+  margin: 0 0 12px;
+  font-size: 14px;
+  color: #6b7280;
+}
+
+/* ============================================================
+   ClinicalNoteReview — wrapper & banners
+   ============================================================ */
+
+.cnr-wrapper {
+  width: 100%;
+}
+
+.cnr-draft-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  border-radius: 8px;
+  background: #fffbeb;
+  border: 1px solid #fbbf24;
+  color: #92400e;
+  font-weight: 600;
+  font-size: 15px;
+  margin-bottom: 10px;
+}
+
+.cnr-demo-banner {
+  padding: 10px 16px;
+  border-radius: 8px;
+  background: #f0fdf4;
+  border: 1px solid #86efac;
+  color: #14532d;
+  font-size: 14px;
+  margin-bottom: 10px;
+}
+
+.cnr-approved-banner {
+  padding: 12px 16px;
+  border-radius: 8px;
+  background: #ecfdf3;
+  border: 1px solid #6ee7b7;
+  color: #065f46;
+  font-weight: 600;
+  font-size: 15px;
+  margin-bottom: 16px;
+}
+
+.cnr-safety {
+  margin: 0 0 12px;
+  font-size: 13px;
+  color: #6b7280;
+  padding: 8px 12px;
+  background: #f1f5f9;
+  border-radius: 6px;
+  border-left: 3px solid #94a3b8;
+}
+
+/* ============================================================
+   Top bar: back button + status pill
+   ============================================================ */
+
+.cnr-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.cnr-back-btn {
+  appearance: none;
+  border: 1px solid #dbe3ef;
+  border-radius: 8px;
+  padding: 8px 14px;
+  background: #fff;
+  color: #374151;
+  font: inherit;
+  font-size: 14px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.cnr-back-btn:hover {
+  background: #f1f5f9;
+}
+
+.cnr-status-pill {
+  display: inline-block;
+  padding: 4px 14px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.cnr-status-draft    { background: #fef9c3; color: #713f12; }
+.cnr-status-reviewed { background: #dbeafe; color: #1e3a8a; }
+.cnr-status-approved { background: #dcfce7; color: #14532d; }
+
+/* ============================================================
+   Two-column layout
+   ============================================================ */
+
+.cnr-layout {
+  display: grid;
+  grid-template-columns: 1fr 340px;
+  gap: 24px;
+  align-items: start;
+}
+
+@media (max-width: 900px) {
+  .cnr-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ============================================================
+   Note editor panel
+   ============================================================ */
+
+.cnr-note-panel,
+.cnr-transcript-panel {
+  background: #fff;
+  border: 1px solid #dbe3ef;
+  border-radius: 12px;
+  padding: 24px;
+  box-sizing: border-box;
+}
+
+.cnr-panel-title {
+  margin: 0 0 20px;
+  font-size: 20px;
+  color: var(--text-h);
+  font-weight: 600;
+}
+
+.cnr-fieldset {
+  border: 0;
+  padding: 0;
+  margin: 0 0 24px;
+}
+
+.cnr-fieldset:disabled .cnr-input,
+.cnr-fieldset:disabled .cnr-textarea,
+.cnr-fieldset:disabled .cnr-list-input {
+  background: #f8fafc;
+  color: #9ca3af;
+  cursor: not-allowed;
+}
+
+.cnr-fieldset:disabled .cnr-add-btn,
+.cnr-fieldset:disabled .cnr-remove-btn {
+  display: none;
+}
+
+.cnr-legend {
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #6b7280;
+  padding: 0;
+  margin-bottom: 12px;
+  border-bottom: 1px solid #e5e7eb;
+  width: 100%;
+  display: block;
+  padding-bottom: 6px;
+}
+
+.cnr-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 12px;
+}
+
+/* ============================================================
+   Form elements
+   ============================================================ */
+
+.cnr-field {
+  margin-bottom: 14px;
+}
+
+.cnr-field:last-child {
+  margin-bottom: 0;
+}
+
+.cnr-label {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  color: #374151;
+  margin-bottom: 5px;
+}
+
+.cnr-required {
+  color: #dc2626;
+}
+
+.cnr-input,
+.cnr-textarea {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid #d1d5db;
+  border-radius: 7px;
+  padding: 8px 10px;
+  font: inherit;
+  font-size: 15px;
+  color: var(--text-h);
+  background: #fff;
+  transition: border-color 0.15s;
+  resize: vertical;
+}
+
+.cnr-input:focus,
+.cnr-textarea:focus {
+  outline: none;
+  border-color: #1d4ed8;
+  box-shadow: 0 0 0 3px rgba(29, 78, 216, 0.12);
+}
+
+.cnr-empty {
+  font-size: 14px;
+  color: #9ca3af;
+  font-style: italic;
+  margin: 0 0 6px;
+}
+
+/* ============================================================
+   Editable list
+   ============================================================ */
+
+.cnr-list {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.cnr-list-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.cnr-list-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.cnr-list-input {
+  flex: 1;
+}
+
+.cnr-icon-btn {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  padding: 4px 6px;
+  font-size: 14px;
+  line-height: 1;
+  border-radius: 5px;
+  color: #6b7280;
+  flex-shrink: 0;
+}
+
+.cnr-remove-btn:hover {
+  background: #fef2f2;
+  color: #dc2626;
+}
+
+.cnr-add-btn {
+  appearance: none;
+  border: 1px dashed #9ca3af;
+  border-radius: 7px;
+  background: transparent;
+  padding: 6px 12px;
+  font: inherit;
+  font-size: 13px;
+  color: #6b7280;
+  cursor: pointer;
+  margin-top: 4px;
+  transition: border-color 0.15s, color 0.15s;
+}
+
+.cnr-add-btn:hover {
+  border-color: #1d4ed8;
+  color: #1d4ed8;
+}
+
+/* ============================================================
+   Source evidence
+   ============================================================ */
+
+.cnr-evidence {
+  margin: 0 0 0 2px;
+  font-size: 12px;
+  color: #4b5563;
+  padding: 4px 8px;
+  background: #f0fdf4;
+  border-left: 3px solid #86efac;
+  border-radius: 0 4px 4px 0;
+  font-style: italic;
+  display: flex;
+  align-items: flex-start;
+  gap: 5px;
+}
+
+.cnr-evidence-icon {
+  font-style: normal;
+  flex-shrink: 0;
+}
+
+/* ============================================================
+   Actions footer
+   ============================================================ */
+
+.cnr-actions {
+  margin-top: 28px;
+  padding-top: 20px;
+  border-top: 1px solid #e5e7eb;
+}
+
+.cnr-action-row {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.cnr-btn {
+  appearance: none;
+  border: 0;
+  border-radius: 8px;
+  padding: 11px 20px;
+  font: inherit;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+
+.cnr-btn:hover {
+  opacity: 0.88;
+}
+
+.cnr-btn-secondary {
+  background: #e2e8f0;
+  color: #1e293b;
+}
+
+.cnr-btn-primary {
+  background: #1d4ed8;
+  color: #fff;
+}
+
+.cnr-validation-error {
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: #fef2f2;
+  color: #991b1b;
+  font-size: 14px;
+}
+
+.cnr-save-message {
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: #f0fdf4;
+  color: #166534;
+  font-size: 14px;
+}
+
+/* ============================================================
+   Transcript evidence panel
+   ============================================================ */
+
+.cnr-transcript-panel {
+  position: sticky;
+  top: 24px;
+}
+
+.cnr-transcript-hint {
+  font-size: 13px;
+  color: #6b7280;
+  margin: 0 0 12px;
+}
+
+.cnr-transcript-box {
+  background: #f8fafc;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 14px;
+  font-size: 14px;
+  line-height: 1.7;
+  color: #374151;
+  white-space: pre-wrap;
+  word-break: break-word;
+  min-height: 120px;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+.cnr-transcript-box:focus {
+  outline: 2px solid #1d4ed8;
+  outline-offset: 2px;
 }

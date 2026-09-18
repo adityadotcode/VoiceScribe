@@ -31,7 +31,15 @@ function extensionFromMime(mimeType) {
   return 'webm'
 }
 
-function AudioRecorder() {
+/**
+ * AudioRecorder handles mic capture, playback, S3 upload, and Amazon Transcribe.
+ *
+ * Props:
+ *   onTranscriptReady(objectKey: string, transcript: string) — optional callback
+ *     called once transcription completes successfully. App.jsx uses this to
+ *     advance to the clinical note review screen.
+ */
+function AudioRecorder({ onTranscriptReady }) {
   const mediaRecorderRef = useRef(null)
   const chunksRef = useRef([])
   const streamRef = useRef(null)
@@ -184,8 +192,12 @@ function AudioRecorder() {
         return
       }
 
-      setObjectKey(data.objectKey)
-      setStatus('success')
+      const uploadedKey = data.objectKey
+      setObjectKey(uploadedKey)
+      setStatus('transcribing')
+
+      // --- Transcribe step (additive — did not exist before) ---
+      await transcribeRecording(uploadedKey)
     } catch (error) {
       console.error(error)
       setStatus('error')
@@ -193,10 +205,42 @@ function AudioRecorder() {
     }
   }
 
-  const canRecord = status !== 'recording' && status !== 'uploading'
+  /** Calls POST /api/transcribe and, on success, invokes onTranscriptReady. */
+  async function transcribeRecording(key) {
+    try {
+      const response = await fetch('/api/transcribe', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ objectKey: key }),
+      })
+      const data = await response.json()
+
+      if (!response.ok || !data.success) {
+        setStatus('error')
+        setErrorMessage(data.message || 'Transcription failed. Please try again.')
+        return
+      }
+
+      setStatus('success')
+
+      // Hand off to parent (App) so it can advance to the review screen.
+      if (typeof onTranscriptReady === 'function') {
+        onTranscriptReady(key, data.transcript ?? '')
+      }
+    } catch (error) {
+      console.error(error)
+      setStatus('error')
+      setErrorMessage('Transcription failed. Please try again.')
+    }
+  }
+
+  const canRecord = status !== 'recording' && status !== 'uploading' && status !== 'transcribing'
   const canStop = status === 'recording'
-  const canUpload = Boolean(audioBlob) && status !== 'recording' && status !== 'uploading'
+  const canUpload = Boolean(audioBlob) && status !== 'recording' && status !== 'uploading' && status !== 'transcribing'
   const canReRecord = canRecord && (Boolean(audioBlob) || status === 'error' || status === 'success')
+
+  const statusLabel =
+    status === 'transcribing' ? 'transcribing (this may take up to 60 s)…' : status
 
   return (
     <section className="recorder" aria-label="Consultation audio recorder">
@@ -205,7 +249,7 @@ function AudioRecorder() {
         Record a short clip, play it back, then upload it privately to VoiceScribe.
       </p>
 
-      <p className={`recorder-state is-${status}`}>Status: {status}</p>
+      <p className={`recorder-state is-${status}`}>Status: {statusLabel}</p>
 
       <div className="recorder-actions">
         {canStop ? (
@@ -229,7 +273,7 @@ function AudioRecorder() {
           onClick={uploadRecording}
           disabled={!canUpload}
         >
-          {status === 'uploading' ? 'Uploading...' : 'Upload'}
+          {status === 'uploading' ? 'Uploading…' : status === 'transcribing' ? 'Transcribing…' : 'Upload & Transcribe'}
         </button>
 
         <button
