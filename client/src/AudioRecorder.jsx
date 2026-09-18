@@ -189,7 +189,7 @@ function AudioRecorder({ onTranscriptReady, onStageChange }) {
       // 'extracting' once it receives the transcript and calls Bedrock.
       // We do NOT set 'success' here; App calls onTranscriptReady which
       // takes over and drives the rest of the pipeline.
-      onTranscriptReady?.(key, data.transcript ?? '')
+      onTranscriptReady?.(key, data.transcript ?? '', data.detectedLanguages ?? [])
     } catch (err) {
       console.error(err)
       applyStatus('error')

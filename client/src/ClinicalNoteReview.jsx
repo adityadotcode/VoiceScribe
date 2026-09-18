@@ -254,6 +254,43 @@ function ApprovalChecklist({ checked, onChange, disabled, approved }) {
 }
 
 // ---------------------------------------------------------------------------
+// LanguageIndicator — shows detected languages from Amazon Transcribe
+// ---------------------------------------------------------------------------
+/**
+ * Displays the languages detected by Amazon Transcribe's IdentifyMultipleLanguages.
+ *
+ * Props:
+ *   languages  {Array<{code: string, duration: number|null}>}
+ *              Sorted by duration descending (primary language first).
+ *              Empty array → nothing shown.
+ */
+function LanguageIndicator({ languages }) {
+  if (!Array.isArray(languages) || languages.length === 0) return null
+
+  // Human-readable label map for the two supported languages
+  const LANG_LABELS = {
+    'en-IN': 'English (India)',
+    'hi-IN': 'Hindi',
+    'en-US': 'English (US)',
+    'en-GB': 'English (UK)',
+  }
+
+  return (
+    <div className="cnr-lang-indicator" aria-label="Detected languages">
+      <span className="cnr-lang-icon" aria-hidden="true">🌐</span>
+      <span className="cnr-lang-label">Languages detected:</span>
+      <span className="cnr-lang-chips">
+        {languages.map(({ code, duration }) => (
+          <span key={code} className="cnr-lang-chip" title={duration != null ? `~${Math.round(duration)} s spoken` : undefined}>
+            {LANG_LABELS[code] ?? code}
+          </span>
+        ))}
+      </span>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
 // ExtractionSummary — pure calculation, no API calls
 // ---------------------------------------------------------------------------
 /**
@@ -338,6 +375,7 @@ function ClinicalNoteReview({
   transcript,
   isDemo = false,
   bedrockFailed = false,
+  detectedLanguages = [],
   initialConsultationId = null,
   onBack,
   onSaved,
@@ -671,6 +709,7 @@ function ClinicalNoteReview({
         {/* Right: transcript panel */}
         <aside className="cnr-transcript-panel" aria-label="Original transcript">
           <h2 className="cnr-panel-title">Transcript evidence</h2>
+          <LanguageIndicator languages={detectedLanguages} />
           <p className="cnr-transcript-hint">
             Read-only. Verify each field against what was actually said.
           </p>

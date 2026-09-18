@@ -100,15 +100,27 @@ const {
           );
         }
 
+        // Extract detected language information.
+        // For IdentifyMultipleLanguages jobs, LanguageCodes is an array of
+        // { LanguageCode: string, DurationInSeconds: number } objects ordered by
+        // total spoken duration. For single-language jobs this array may be absent.
+        const rawLanguageCodes = job.LanguageCodes ?? [];
+        const detectedLanguages = rawLanguageCodes.map((lc) => ({
+          code:     lc.LanguageCode,
+          duration: lc.DurationInSeconds ?? null,
+        }));
+
+        console.log('[transcribeService] detected languages:', JSON.stringify(detectedLanguages));
+
         return {
           jobName,
           status: 'COMPLETED',
           // The extracted transcript string. Empty string means the audio had no
           // recognisable speech; null means the expected JSON path was absent.
           transcript: transcript ?? '',
-          // rawResult is omitted from the response by default. Uncomment the line
-          // below only when debugging the transcript JSON shape.
-          // rawResult: transcriptData,
+          // Languages detected by IdentifyMultipleLanguages.
+          // Each item: { code: 'en-IN' | 'hi-IN', duration: number | null }
+          detectedLanguages,
         };
       }
   

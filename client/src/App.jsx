@@ -66,6 +66,7 @@ function App() {
   const [isDemo, setIsDemo]                             = useState(false)
   const [bedrockFailed, setBedrockFailed]               = useState(false)
   const [activeConsultationId, setActiveConsultationId] = useState(null)
+  const [detectedLanguages, setDetectedLanguages]       = useState([])
 
   // Bump to force Dashboard to re-fetch after a save/approve
   const [dashboardRefresh, setDashboardRefresh] = useState(0)
@@ -92,8 +93,9 @@ function App() {
   }
 
   // ── Transcript ready → call Bedrock ───────────────────────────────────────
-  async function handleTranscriptReady(objectKey, rawTranscript) {
+  async function handleTranscriptReady(objectKey, rawTranscript, langs = []) {
     setTranscript(rawTranscript)
+    setDetectedLanguages(langs)
     setPipelineStep('extracting')
     setPipelineError('')
 
@@ -159,6 +161,7 @@ function App() {
     setBedrockFailed(false)
     setActiveConsultationId(null)
     setIsDemo(true)
+    setDetectedLanguages([])
     setStage(STAGE.REVIEW)
   }
 
@@ -174,6 +177,7 @@ function App() {
       setBedrockFailed(false)
       setActiveConsultationId(c._id)
       setIsDemo(false)
+      setDetectedLanguages([])
       setStage(STAGE.REVIEW)
     } catch {
       alert('Network error — could not load consultation.')
@@ -188,6 +192,7 @@ function App() {
     setBedrockFailed(false)
     setActiveConsultationId(null)
     setIsDemo(false)
+    setDetectedLanguages([])
     setPipelineStep('')
     setPipelineError('')
   }
@@ -266,6 +271,7 @@ function App() {
             transcript={transcript}
             isDemo={isDemo}
             bedrockFailed={bedrockFailed}
+            detectedLanguages={detectedLanguages}
             initialConsultationId={activeConsultationId}
             onBack={handleBack}
             onSaved={handleSaved}

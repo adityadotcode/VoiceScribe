@@ -1712,3 +1712,47 @@
     gap: 2px;
   }
 }
+
+/* ============================================================
+   LANGUAGE INDICATOR — transcript panel
+   ============================================================ */
+
+.cnr-lang-indicator {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 10px;
+  font-size: 12px;
+  color: var(--text-sub);
+}
+
+.cnr-lang-icon {
+  font-size: 13px;
+  flex-shrink: 0;
+}
+
+.cnr-lang-label {
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.cnr-lang-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.cnr-lang-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 9px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  background: var(--brand-light);
+  border: 1px solid #bfdbfe;
+  color: var(--brand-dark);
+  white-space: nowrap;
+}
