@@ -71,7 +71,7 @@ cd client
 npm run dev          # Vite dev server with /api proxy → localhost:5000
 ```
 
-Open http://localhost:5174
+Open http://localhost:5173
 
 ---
 
