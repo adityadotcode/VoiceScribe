@@ -7,7 +7,7 @@ const { errorHandler } = require('./middleware/errorHandler');
 const app = express();
 
 app.use(cors({ origin: clientOrigin }));
-app.use(express.json());
+app.use(express.json({ limit: '1mb' }));
 app.use('/api', apiRoutes);
 app.use(errorHandler);
 

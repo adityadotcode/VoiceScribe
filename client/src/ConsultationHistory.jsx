@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import { apiUrl } from './api.js'
 
 /**
  * ConsultationHistory
@@ -16,7 +17,7 @@ function ConsultationHistory({ onOpen, refreshTrigger = 0 }) {
     setLoading(true)
     setError('')
     try {
-      const res  = await fetch('/api/consultations')
+      const res  = await fetch(apiUrl('/api/consultations'))
       const data = await res.json()
       if (!data.success) {
         setError(data.message || 'Could not load history.')

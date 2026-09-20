@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { apiUrl } from './api.js'
 
 // Preferred MIME types in priority order.
 const RECORDER_MIME_TYPES = [
@@ -20,30 +21,181 @@ function extensionFromMime(mimeType) {
   return 'webm'
 }
 
-/**
- * AudioRecorder — mic capture, playback, S3 upload, Amazon Transcribe.
- *
- * Props:
- *   onTranscriptReady(objectKey, transcript)
- *     Called once transcription completes. App uses this to kick off Bedrock.
- *
- *   onStageChange(stage)
- *     Called whenever the internal pipeline stage changes so App can mirror
- *     progress in its own progress display.
- *     Possible values: 'idle' | 'recording' | 'uploading' | 'transcribing' |
- *                      'success' | 'error'
- */
+// ---------------------------------------------------------------------------
+// MIME types accepted by the backend multer middleware (audioUpload.js).
+// Must stay in sync with server/src/middleware/audioUpload.js ALLOWED_MIME_TYPES.
+// ---------------------------------------------------------------------------
+const ACCEPTED_UPLOAD_MIME_TYPES = new Set([
+  'audio/webm',
+  'audio/ogg',
+  'audio/mpeg',
+  'audio/mp3',
+  'audio/mp4',
+  'audio/x-m4a',
+  'audio/aac',
+  'audio/wav',
+  'audio/x-wav',
+  'audio/wave',
+])
+
+// MAX_AUDIO_FILE_BYTES from server/.env (default 25 MB).
+// Exposed to the frontend so validation matches server-side.
+const MAX_BYTES = 25 * 1024 * 1024
+
+function formatBytes(bytes) {
+  if (bytes < 1024)        return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
+
+function normalizeMime(mime) {
+  return (mime || '').split(';')[0].trim().toLowerCase()
+}
+
+// ---------------------------------------------------------------------------
+// FileUploadSection — secondary action shown below the Start Recording button.
+// Shares the same upload/transcribe pipeline via the props from AudioRecorder.
+// ---------------------------------------------------------------------------
+function FileUploadSection({ onProcessFile, disabled }) {
+  const fileInputRef             = useRef(null)
+  const [selectedFile, setSelectedFile] = useState(null)
+  const [fileError, setFileError]       = useState('')
+
+  function handleFileChange(e) {
+    const file = e.target.files?.[0]
+    // Reset input so the same file can be re-selected after removal
+    e.target.value = ''
+
+    if (!file) return
+
+    setFileError('')
+
+    // Validate MIME type
+    if (!ACCEPTED_UPLOAD_MIME_TYPES.has(normalizeMime(file.type))) {
+      setFileError(
+        `"${file.name}" is not a supported audio format. ` +
+        `Accepted: MP3, MP4/M4A, WAV, OGG, WebM, AAC.`
+      )
+      return
+    }
+
+    // Validate size
+    if (file.size === 0) {
+      setFileError('The selected file is empty.')
+      return
+    }
+
+    if (file.size > MAX_BYTES) {
+      setFileError(
+        `File is too large (${formatBytes(file.size)}). ` +
+        `Maximum allowed size is ${formatBytes(MAX_BYTES)}.`
+      )
+      return
+    }
+
+    setSelectedFile(file)
+  }
+
+  function handleRemove() {
+    setSelectedFile(null)
+    setFileError('')
+  }
+
+  function handleProcess() {
+    if (!selectedFile || disabled) return
+    onProcessFile(selectedFile)
+    setSelectedFile(null)
+    setFileError('')
+  }
+
+  return (
+    <div className="file-upload-section">
+      <div className="file-upload-divider">
+        <span className="file-upload-divider-text">or</span>
+      </div>
+
+      {/* Hidden native file input */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="audio/*"
+        className="file-upload-input"
+        aria-label="Select audio file"
+        onChange={handleFileChange}
+        disabled={disabled}
+      />
+
+      {!selectedFile && (
+        <button
+          type="button"
+          className="recorder-button secondary file-upload-trigger"
+          onClick={() => fileInputRef.current?.click()}
+          disabled={disabled}
+        >
+          📁 Upload audio file
+        </button>
+      )}
+
+      {fileError && (
+        <p className="recorder-error file-upload-error" role="alert">{fileError}</p>
+      )}
+
+      {selectedFile && (
+        <div className="file-upload-preview">
+          <div className="file-upload-meta">
+            <span className="file-upload-icon" aria-hidden="true">🎵</span>
+            <div className="file-upload-info">
+              <span className="file-upload-name">{selectedFile.name}</span>
+              <span className="file-upload-size">{formatBytes(selectedFile.size)}</span>
+            </div>
+            <button
+              type="button"
+              className="file-upload-remove"
+              onClick={handleRemove}
+              aria-label="Remove selected file"
+            >
+              ✕
+            </button>
+          </div>
+
+          <button
+            type="button"
+            className="recorder-button file-upload-process-btn"
+            onClick={handleProcess}
+            disabled={disabled}
+          >
+            Process audio
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// AudioRecorder — mic capture, playback, S3 upload, Amazon Transcribe.
+//
+// Props:
+//   onTranscriptReady(objectKey, transcript, detectedLanguages, speakerUtterances)
+//     Called once transcription completes. App uses this to kick off Bedrock.
+//
+//   onStageChange(stage)
+//     Called whenever the internal pipeline stage changes so App can mirror
+//     progress in its own progress display.
+//     Possible values: 'idle' | 'recording' | 'uploading' | 'transcribing' |
+//                      'success' | 'error'
+// ---------------------------------------------------------------------------
 function AudioRecorder({ onTranscriptReady, onStageChange }) {
   const mediaRecorderRef = useRef(null)
   const chunksRef        = useRef([])
   const streamRef        = useRef(null)
   const playbackUrlRef   = useRef('')
 
-  const [status, setStatus]           = useState('idle')
+  const [status, setStatus]             = useState('idle')
   const [errorMessage, setErrorMessage] = useState('')
-  const [audioBlob, setAudioBlob]     = useState(null)
-  const [playbackUrl, setPlaybackUrl] = useState('')
-  const [objectKey, setObjectKey]     = useState('')
+  const [audioBlob, setAudioBlob]       = useState(null)
+  const [playbackUrl, setPlaybackUrl]   = useState('')
+  const [objectKey, setObjectKey]       = useState('')
 
   // Mirror every status change to parent via onStageChange
   function applyStatus(next) {
@@ -85,7 +237,7 @@ function AudioRecorder({ onTranscriptReady, onStageChange }) {
         ? new MediaRecorder(stream, { mimeType })
         : new MediaRecorder(stream)
 
-      chunksRef.current      = []
+      chunksRef.current        = []
       mediaRecorderRef.current = recorder
 
       recorder.ondataavailable = (e) => { if (e.data.size > 0) chunksRef.current.push(e.data) }
@@ -132,25 +284,33 @@ function AudioRecorder({ onTranscriptReady, onStageChange }) {
     startRecording()
   }
 
-  async function uploadRecording() {
-    if (!audioBlob) {
-      applyStatus('error')
-      setErrorMessage('Record audio before uploading.')
-      return
-    }
-
+  // ---------------------------------------------------------------------------
+  // Core upload + transcribe path.
+  // Called with either:
+  //   • a Blob produced by MediaRecorder (from uploadRecording)
+  //   • a File picked by the user (from processUploadedFile)
+  // Both go through the same /api/audio → /api/transcribe pipeline.
+  // ---------------------------------------------------------------------------
+  async function uploadAndTranscribe(fileOrBlob) {
     applyStatus('uploading')
     setErrorMessage('')
 
-    const extension = extensionFromMime(audioBlob.type)
-    const file = new File([audioBlob], `consultation.${extension}`, {
-      type: audioBlob.type || 'audio/webm',
-    })
+    // Normalise: if it's already a File, use it; if it's a Blob, wrap it.
+    let file
+    if (fileOrBlob instanceof File) {
+      file = fileOrBlob
+    } else {
+      const extension = extensionFromMime(fileOrBlob.type)
+      file = new File([fileOrBlob], `consultation.${extension}`, {
+        type: fileOrBlob.type || 'audio/webm',
+      })
+    }
+
     const formData = new FormData()
     formData.append('audio', file)
 
     try {
-      const res  = await fetch('/api/audio', { method: 'POST', body: formData })
+      const res  = await fetch(apiUrl('/api/audio'), { method: 'POST', body: formData })
       const data = await res.json()
 
       if (!res.ok || !data.success) {
@@ -170,9 +330,27 @@ function AudioRecorder({ onTranscriptReady, onStageChange }) {
     }
   }
 
+  // Called when the recorder's Upload & Transcribe button is clicked.
+  async function uploadRecording() {
+    if (!audioBlob) {
+      applyStatus('error')
+      setErrorMessage('Record audio before uploading.')
+      return
+    }
+    await uploadAndTranscribe(audioBlob)
+  }
+
+  // Called from FileUploadSection when the user picks a file and clicks Process.
+  async function processUploadedFile(file) {
+    setObjectKey('')
+    setAudioBlob(null)
+    setErrorMessage('')
+    await uploadAndTranscribe(file)
+  }
+
   async function transcribeRecording(key) {
     try {
-      const res  = await fetch('/api/transcribe', {
+      const res  = await fetch(apiUrl('/api/transcribe'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ objectKey: key }),
@@ -187,8 +365,6 @@ function AudioRecorder({ onTranscriptReady, onStageChange }) {
 
       // Stay in 'transcribing' visually — App will advance the stage to
       // 'extracting' once it receives the transcript and calls Bedrock.
-      // We do NOT set 'success' here; App calls onTranscriptReady which
-      // takes over and drives the rest of the pipeline.
       onTranscriptReady?.(key, data.transcript ?? '', data.detectedLanguages ?? [], data.speakerUtterances ?? [])
     } catch (err) {
       console.error(err)
@@ -197,10 +373,10 @@ function AudioRecorder({ onTranscriptReady, onStageChange }) {
     }
   }
 
-  const busy       = status === 'recording' || status === 'uploading' || status === 'transcribing'
-  const canRecord  = !busy
-  const canStop    = status === 'recording'
-  const canUpload  = Boolean(audioBlob) && !busy
+  const busy        = status === 'recording' || status === 'uploading' || status === 'transcribing'
+  const canRecord   = !busy
+  const canStop     = status === 'recording'
+  const canUpload   = Boolean(audioBlob) && !busy
   const canReRecord = canRecord && (Boolean(audioBlob) || status === 'error' || status === 'success')
 
   const statusLabel = {
@@ -258,6 +434,12 @@ function AudioRecorder({ onTranscriptReady, onStageChange }) {
       {status === 'error' && errorMessage && (
         <p className="recorder-error" role="alert">{errorMessage}</p>
       )}
+
+      {/* ── File upload section — secondary action, same pipeline ── */}
+      <FileUploadSection
+        onProcessFile={processUploadedFile}
+        disabled={busy}
+      />
     </section>
   )
 }

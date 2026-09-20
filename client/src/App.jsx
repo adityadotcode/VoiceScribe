@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import AudioRecorder from './AudioRecorder.jsx'
 import ClinicalNoteReview from './ClinicalNoteReview.jsx'
 import Dashboard from './Dashboard.jsx'
+import { apiUrl } from './api.js'
 import './App.css'
 
 // ---------------------------------------------------------------------------
@@ -45,10 +46,11 @@ const BLANK_NOTE = {
 const STAGE = { DASHBOARD: 'dashboard', RECORDING: 'recording', PROCESSING: 'processing', REVIEW: 'review' }
 
 const PIPELINE_STEPS = [
-  { key: 'uploading',    label: 'Uploading to S3'          },
-  { key: 'transcribing', label: 'Transcribing audio'        },
-  { key: 'extracting',   label: 'Extracting clinical note'  },
-  { key: 'ready',        label: 'Ready for doctor review'   },
+  { key: 'uploading',    label: 'Uploading audio'               },
+  { key: 'transcribing', label: 'Transcribing'                   },
+  { key: 'analyzing',    label: 'Detecting language and speakers' },
+  { key: 'extracting',   label: 'Generating clinical note'        },
+  { key: 'ready',        label: 'Ready for review'               },
 ]
 
 // ---------------------------------------------------------------------------
@@ -56,10 +58,22 @@ const PIPELINE_STEPS = [
 // ---------------------------------------------------------------------------
 function App() {
   const [apiStatus, setApiStatus] = useState('Checking API…')
-  const [stage, setStage]         = useState(STAGE.DASHBOARD)
+  const [stage, setStageRaw]      = useState(STAGE.DASHBOARD)
+
+  // Always use setStage() (not setStageRaw) so stageRef stays in sync.
+  // This prevents stale-closure bugs in callbacks registered once (e.g. handleStageChange).
+  function setStage(next) {
+    stageRef.current = next
+    setStageRaw(next)
+  }
 
   const [pipelineStep, setPipelineStep]   = useState('')
   const [pipelineError, setPipelineError] = useState('')
+  // Preserved during processing so the Bedrock-retry path can reuse them
+  // without requiring a re-upload.
+  const [pendingObjectKey, setPendingObjectKey]   = useState('')
+  const [pendingTranscript, setPendingTranscript] = useState('')
+  const [processingFailed, setProcessingFailed]   = useState(false)
 
   const [transcript, setTranscript]                     = useState('')
   const [note, setNote]                                 = useState(null)
@@ -73,9 +87,13 @@ function App() {
   // Bump to force Dashboard to re-fetch after a save/approve
   const [dashboardRefresh, setDashboardRefresh] = useState(0)
 
+  // Ref that mirrors the current stage value for use inside callbacks
+  // (avoids stale-closure bugs where the closure captures the initial value).
+  const stageRef = useRef(STAGE.DASHBOARD)
+
   // ── Health-check ──────────────────────────────────────────────────────────
   useEffect(() => {
-    fetch('/api/health')
+    fetch(apiUrl('/api/health'))
       .then((r) => r.json())
       .then((d) => setApiStatus(d.success ? d.message : 'API responded unexpectedly'))
       .catch(() => setApiStatus('API is not reachable yet'))
@@ -85,12 +103,18 @@ function App() {
   function handleStageChange(recorderStage) {
     if (recorderStage === 'uploading' || recorderStage === 'transcribing') {
       setPipelineStep(recorderStage)
+      setProcessingFailed(false)
+      setPipelineError('')
       setStage(STAGE.PROCESSING)
     }
     if (recorderStage === 'error') {
-      setStage(STAGE.RECORDING)
-      setPipelineStep('')
-      setPipelineError('')
+      // Use stageRef.current (not the stage state variable) to avoid the
+      // stale-closure bug where stage is still RECORDING when the async
+      // upload/transcription error arrives.
+      if (stageRef.current === STAGE.PROCESSING) {
+        setProcessingFailed(true)
+        setPipelineError('Processing failed. Please check your connection and try again.')
+      }
     }
   }
 
@@ -99,11 +123,30 @@ function App() {
     setTranscript(rawTranscript)
     setDetectedLanguages(langs)
     setSpeakerUtterances(utterances)
+    // Preserve for Bedrock retry without re-uploading / re-transcribing
+    setPendingObjectKey(objectKey)
+    setPendingTranscript(rawTranscript)
+    // 'analyzing' covers the language + speaker data that just came back
+    setPipelineStep('analyzing')
+    setPipelineError('')
+    setProcessingFailed(false)
+
+    // Brief visual pause so the doctor sees 'analyzing' complete before
+    // the step advances to 'extracting'. This is not a fake timer —
+    // the data has already been processed by this point.
+    await delay(400)
+    await runBedrockExtraction(objectKey, rawTranscript)
+  }
+
+  // Separated so it can be called both from handleTranscriptReady AND from
+  // the Retry button without duplicating logic.
+  async function runBedrockExtraction(objectKey, rawTranscript) {
     setPipelineStep('extracting')
     setPipelineError('')
+    setProcessingFailed(false)
 
     try {
-      const res  = await fetch('/api/extract-note', {
+      const res  = await fetch(apiUrl('/api/extract-note'), {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify({ transcript: rawTranscript, objectKey }),
@@ -113,15 +156,12 @@ function App() {
       if (!res.ok || !data.success) {
         console.warn('[App] /api/extract-note failed:', data.message)
         setPipelineError(
-          `Note extraction failed: ${data.message || 'unknown error'}. ` +
-          `The transcript has been preserved — please fill in the note manually.`
+          data.message && data.message.length < 200
+            ? data.message
+            : 'Unable to generate the clinical note.'
         )
-        setNote(BLANK_NOTE)
-        setBedrockFailed(true)
-        setActiveConsultationId(null)
-        setIsDemo(false)
-        await delay(2200)
-        openReview()
+        setProcessingFailed(true)
+        // Stay on the processing screen — doctor can retry or continue manually
         return
       }
 
@@ -134,17 +174,24 @@ function App() {
       openReview()
     } catch (err) {
       console.error('[App] extract-note network error:', err)
-      setPipelineError(
-        'Could not reach the note extraction service. ' +
-        'The transcript has been preserved — please fill in the note manually.'
-      )
-      setNote(BLANK_NOTE)
-      setBedrockFailed(true)
-      setActiveConsultationId(null)
-      setIsDemo(false)
-      await delay(2200)
-      openReview()
+      setPipelineError('Could not reach the note extraction service. Check your connection and try again.')
+      setProcessingFailed(true)
     }
+  }
+
+  // ── Retry Bedrock extraction using the preserved transcript ───────────────
+  function handleRetryExtraction() {
+    if (!pendingTranscript) return
+    runBedrockExtraction(pendingObjectKey, pendingTranscript)
+  }
+
+  // ── Continue to review with a blank note (when Bedrock fails) ─────────────
+  function handleContinueManually() {
+    setNote(BLANK_NOTE)
+    setBedrockFailed(true)
+    setActiveConsultationId(null)
+    setIsDemo(false)
+    openReview()
   }
 
   function openReview() {
@@ -173,7 +220,7 @@ function App() {
   // ── Open from dashboard ───────────────────────────────────────────────────
   async function handleOpenConsultation(summary) {
     try {
-      const res  = await fetch(`/api/consultations/${summary._id}`)
+      const res  = await fetch(apiUrl(`/api/consultations/${summary._id}`))
       const data = await res.json()
       if (!data.success) { alert(`Could not load consultation: ${data.message}`); return }
       const c = data.consultation
@@ -204,6 +251,9 @@ function App() {
     setSpeakerRoleMapping({})
     setPipelineStep('')
     setPipelineError('')
+    setPendingObjectKey('')
+    setPendingTranscript('')
+    setProcessingFailed(false)
   }
 
   // ── After save/approve — refresh dashboard ────────────────────────────────
@@ -217,6 +267,13 @@ function App() {
   // ==========================================================================
   if (stage === STAGE.PROCESSING) {
     const activeIndex = PIPELINE_STEPS.findIndex((s) => s.key === pipelineStep)
+    // If no step is active yet (pipelineStep is ''), treat all as pending
+    const resolvedActive = activeIndex >= 0 ? activeIndex : 0
+
+    // A recorder-level error (upload/transcription failure) means the
+    // AudioRecorder itself is showing the error message, but we are still on
+    // the processing screen.  Give the user a clear path back.
+    const recorderFailed = pipelineStep === '' && !processingFailed
 
     return (
       <div className="app-shell">
@@ -230,16 +287,25 @@ function App() {
 
         <main className="page page--centered">
           <div className="pipeline-card">
-            <p className="pipeline-title">Processing consultation…</p>
+            <p className="pipeline-title">
+              {processingFailed
+                ? 'Processing stopped'
+                : 'Processing consultation…'}
+            </p>
+
             <ol className="pipeline-steps" aria-label="Pipeline progress">
               {PIPELINE_STEPS.map(({ key, label }, idx) => {
-                const isDone   = idx < activeIndex
-                const isActive = idx === activeIndex
-                const cls = isDone ? 'is-done' : isActive ? 'is-active' : ''
+                const isDone   = idx < resolvedActive
+                const isActive = idx === resolvedActive && !processingFailed
+                const isFailed = processingFailed && idx === resolvedActive
+                const cls = isFailed ? 'is-failed'
+                          : isDone   ? 'is-done'
+                          : isActive ? 'is-active'
+                          : ''
                 return (
                   <li key={key} className={`pipeline-step ${cls}`}>
                     <span className="pipeline-step-icon" aria-hidden="true">
-                      {isDone ? '✓' : idx + 1}
+                      {isFailed ? '✕' : isDone ? '✓' : idx + 1}
                     </span>
                     {label}
                     {isActive && key !== 'ready' && (
@@ -249,7 +315,46 @@ function App() {
                 )
               })}
             </ol>
-            {pipelineError && (
+
+            {/* ── Error state with recovery options ── */}
+            {processingFailed && pipelineError && (
+              <div className="pipeline-error-block" role="alert">
+                <p className="pipeline-error-msg">{pipelineError}</p>
+                <div className="pipeline-error-actions">
+                  {/* Retry is only possible if we have a preserved transcript */}
+                  {pendingTranscript && (
+                    <button
+                      type="button"
+                      className="pipeline-retry-btn"
+                      onClick={handleRetryExtraction}
+                    >
+                      Try again
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    className="pipeline-manual-btn"
+                    onClick={handleContinueManually}
+                    title="Open the review screen and fill in the note manually"
+                  >
+                    Fill in note manually
+                  </button>
+                  <button
+                    type="button"
+                    className="pipeline-back-btn"
+                    onClick={() => {
+                      handleBack()
+                      setStage(STAGE.RECORDING)
+                    }}
+                  >
+                    ← Back to recording
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Non-processing error (e.g. upload/transcription failed inline in recorder) */}
+            {!processingFailed && pipelineError && (
               <div className="pipeline-error" role="alert">
                 <strong>Note:</strong> {pipelineError}
               </div>
