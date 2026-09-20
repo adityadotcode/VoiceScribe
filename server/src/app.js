@@ -25,7 +25,8 @@ if (process.env.NODE_ENV === 'production') {
 
   // For any path that is not under /api, return index.html so that
   // React Router (if ever added) and direct URL navigation work correctly.
-  app.get('*', (_req, res) => {
+  // Express 5 requires a named wildcard parameter — '/{*path}' covers all paths.
+  app.get('/{*path}', (_req, res) => {
     res.sendFile(path.join(distPath, 'index.html'));
   });
 }
