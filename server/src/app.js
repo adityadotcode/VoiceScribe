@@ -1,14 +1,31 @@
 const path = require('path');
 const express = require('express');
 const cors = require('cors');
+const helmet = require('helmet');
+const cookieParser = require('cookie-parser');
 const { clientOrigin } = require('./config/env');
 const apiRoutes = require('./routes');
 const { errorHandler } = require('./middleware/errorHandler');
 
 const app = express();
 
+// ── Security headers ──────────────────────────────────────────────────────
+// helmet sets a conservative set of HTTP security headers.
+// contentSecurityPolicy is disabled here because the React SPA uses inline
+// scripts injected by Vite; a proper CSP will be configured in Phase 7
+// (security hardening) once the frontend build pipeline is finalised.
+app.use(helmet({ contentSecurityPolicy: false }));
+
+// ── CORS ──────────────────────────────────────────────────────────────────
 app.use(cors({ origin: clientOrigin }));
+
+// ── Body parsing ──────────────────────────────────────────────────────────
 app.use(express.json({ limit: '1mb' }));
+
+// ── Cookie parsing ────────────────────────────────────────────────────────
+// Required for Phase 1 authentication (HTTP-only refresh token cookie).
+// No cookies are created or read in Phase 0 — this is purely preparation.
+app.use(cookieParser());
 
 // ── API routes (always active) ────────────────────────────────────────────
 app.use('/api', apiRoutes);

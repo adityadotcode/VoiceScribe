@@ -1,4 +1,5 @@
-// Load environment configuration first (will exit if required vars are missing).
+// Load environment configuration first — will process.exit(1) if required
+// variables are missing, so this must run before anything else.
 const { port, mongodbUri, awsRegion, s3BucketName } = require('./config/env');
 const { connectDb } = require('./config/db');
 const app = require('./app');
@@ -9,8 +10,9 @@ const dns = require('dns');
 dns.setServers(['8.8.8.8', '1.1.1.1']);
 
 async function start() {
-  // Connect to MongoDB before accepting traffic so the first request does not
-  // arrive before the DB is ready.  connectDb() exits the process on failure.
+  // Connect to MongoDB before accepting traffic so the first request never
+  // arrives before the database is ready.  connectDb() calls process.exit(1)
+  // on connection failure so the health check correctly reports unhealthy.
   await connectDb(mongodbUri);
 
   const server = app.listen(port, () => {
@@ -20,9 +22,9 @@ async function start() {
     console.log(`[server] CORS origin: ${process.env.CLIENT_ORIGIN || 'http://localhost:5174'}`);
   });
 
-  // Graceful shutdown — allow in-flight requests to finish, then exit cleanly.
-  // This is important for containers (ECS, App Runner) where SIGTERM is sent
-  // before the instance is removed from the load-balancer target group.
+  // Graceful shutdown — allow in-flight requests to finish before exiting.
+  // Important on EC2 / behind a load balancer where SIGTERM signals imminent
+  // instance replacement.
   function shutdown(signal) {
     console.log(`[server] ${signal} received — shutting down gracefully`);
     server.close(() => {
@@ -30,7 +32,7 @@ async function start() {
       process.exit(0);
     });
 
-    // Force-exit if the server has not closed after 10 s.
+    // Force exit if the server has not closed within 10 s.
     setTimeout(() => {
       console.error('[server] Forced exit after 10 s shutdown timeout');
       process.exit(1);
