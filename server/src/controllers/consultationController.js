@@ -1,3 +1,4 @@
+const mongoose     = require('mongoose');
 const Consultation = require('../models/Consultation');
 
 // ---------------------------------------------------------------------------
@@ -55,6 +56,15 @@ function parseBody(body) {
   };
 }
 
+/** Validate a MongoDB ObjectId from a route parameter. */
+function validateObjectId(id, res) {
+  if (!mongoose.isValidObjectId(id)) {
+    res.status(400).json({ success: false, message: 'Invalid consultation ID.' });
+    return false;
+  }
+  return true;
+}
+
 // ---------------------------------------------------------------------------
 // POST /api/consultations
 // ---------------------------------------------------------------------------
@@ -76,6 +86,8 @@ async function createConsultation(req, res) {
 
   try {
     const doc = await Consultation.create({
+      // userId is always set from the verified token — never from the client.
+      userId:             req.user.id,
       transcript:         transcript         ?? '',
       note:               note               ?? {},
       status:             status             ?? 'draft',
@@ -97,7 +109,7 @@ async function createConsultation(req, res) {
 // ---------------------------------------------------------------------------
 async function listConsultations(req, res) {
   try {
-    const docs = await Consultation.find()
+    const docs = await Consultation.find({ userId: req.user.id })
       .sort({ createdAt: -1 })
       .select('_id transcript status note.patient note.chief_complaint createdAt approvedAt')
       .lean();
@@ -113,8 +125,15 @@ async function listConsultations(req, res) {
 // GET /api/consultations/:id
 // ---------------------------------------------------------------------------
 async function getConsultation(req, res) {
+  if (!validateObjectId(req.params.id, res)) return;
+
   try {
-    const doc = await Consultation.findById(req.params.id).lean();
+    // Ownership enforced at query level: another user's doc returns null → 404.
+    // Never returns 403 so we don't reveal that the resource exists.
+    const doc = await Consultation.findOne({
+      _id:    req.params.id,
+      userId: req.user.id,
+    }).lean();
 
     if (!doc) {
       return res.status(404).json({ success: false, message: 'Consultation not found.' });
@@ -122,10 +141,6 @@ async function getConsultation(req, res) {
 
     return res.json({ success: true, consultation: doc });
   } catch (err) {
-    // CastError means the id format is invalid
-    if (err.name === 'CastError') {
-      return res.status(400).json({ success: false, message: 'Invalid consultation ID.' });
-    }
     console.error('[consultationController] get error:', err);
     return res.status(500).json({ success: false, message: 'Failed to fetch consultation.' });
   }
@@ -135,6 +150,8 @@ async function getConsultation(req, res) {
 // PUT /api/consultations/:id
 // ---------------------------------------------------------------------------
 async function updateConsultation(req, res) {
+  if (!validateObjectId(req.params.id, res)) return;
+
   const { errors, transcript, note, status,
           speakerUtterances, detectedLanguages, speakerRoleMapping } = parseBody(req.body);
 
@@ -151,17 +168,36 @@ async function updateConsultation(req, res) {
   }
 
   try {
-    const existing = await Consultation.findById(req.params.id);
+    // Ownership enforced at query level.
+    const existing = await Consultation.findOne({
+      _id:    req.params.id,
+      userId: req.user.id,
+    });
 
     if (!existing) {
       return res.status(404).json({ success: false, message: 'Consultation not found.' });
     }
 
-    // Prevent re-approving an already-approved document
-    if (existing.status === 'approved' && status === 'approved') {
-      return res.status(409).json({
+    // Prevent modifying an already-approved consultation.
+    if (existing.status === 'approved' && status !== undefined) {
+      if (status === 'approved') {
+        return res.status(409).json({
+          success: false,
+          message: 'Consultation is already approved.',
+        });
+      }
+      // Cannot revert an approved consultation back to draft.
+      return res.status(403).json({
         success: false,
-        message: 'Consultation is already approved.',
+        message: 'An approved consultation cannot be modified.',
+      });
+    }
+
+    if (existing.status === 'approved') {
+      // Even non-status field changes are blocked on approved docs.
+      return res.status(403).json({
+        success: false,
+        message: 'An approved consultation cannot be modified.',
       });
     }
 
@@ -181,11 +217,39 @@ async function updateConsultation(req, res) {
     const saved = await existing.save();
     return res.json({ success: true, consultation: saved });
   } catch (err) {
-    if (err.name === 'CastError') {
-      return res.status(400).json({ success: false, message: 'Invalid consultation ID.' });
-    }
     console.error('[consultationController] update error:', err);
     return res.status(500).json({ success: false, message: 'Failed to update consultation.' });
+  }
+}
+
+// ---------------------------------------------------------------------------
+// DELETE /api/consultations/:id   (draft only)
+// ---------------------------------------------------------------------------
+async function deleteConsultation(req, res) {
+  if (!validateObjectId(req.params.id, res)) return;
+
+  try {
+    const existing = await Consultation.findOne({
+      _id:    req.params.id,
+      userId: req.user.id,
+    });
+
+    if (!existing) {
+      return res.status(404).json({ success: false, message: 'Consultation not found.' });
+    }
+
+    if (existing.status === 'approved') {
+      return res.status(403).json({
+        success: false,
+        message: 'Approved consultations cannot be deleted.',
+      });
+    }
+
+    await existing.deleteOne();
+    return res.json({ success: true, message: 'Consultation deleted.' });
+  } catch (err) {
+    console.error('[consultationController] delete error:', err);
+    return res.status(500).json({ success: false, message: 'Failed to delete consultation.' });
   }
 }
 
@@ -194,4 +258,5 @@ module.exports = {
   listConsultations,
   getConsultation,
   updateConsultation,
+  deleteConsultation,
 };

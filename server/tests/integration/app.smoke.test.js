@@ -43,9 +43,11 @@ describe('Express app — smoke tests', () => {
     expect(res.body.service).toBe('VoiceScribe API');
   });
 
-  test('unknown route returns 404', async () => {
+  test('unknown route under /api returns 401 (authenticate middleware)', async () => {
+    // All /api/* routes (except /health and /auth/*) now require a valid access
+    // token.  An unauthenticated request to an unknown /api path returns 401
+    // from the authenticate middleware before Express can return 404.
     const res = await request(app).get('/api/does-not-exist');
-    // Express 5 returns 404 for unmatched routes by default.
-    expect(res.status).toBe(404);
+    expect(res.status).toBe(401);
   });
 });

@@ -14,11 +14,27 @@ const config = {
   awsRegion:         process.env.AWS_REGION      || 'ap-southeast-2',
   s3BucketName:      process.env.S3_BUCKET_NAME  || '',
   maxAudioFileBytes: Number(process.env.MAX_AUDIO_FILE_BYTES) || 25 * 1024 * 1024,
+
+  // ── Phase 1A — JWT configuration ──────────────────────────────────────
+  jwtSecret:        process.env.JWT_SECRET         || '',
+  jwtRefreshSecret: process.env.JWT_REFRESH_SECRET || '',
+  jwtExpiry:        process.env.JWT_EXPIRY         || '15m',
+  jwtRefreshExpiry: process.env.JWT_REFRESH_EXPIRY || '7d',
 };
 
 // Validate required variables.  Print only the NAMES, never the values.
-const REQUIRED = ['MONGODB_URI', 'AWS_REGION', 'S3_BUCKET_NAME'];
-const missing  = REQUIRED.filter((key) => !process.env[key]);
+const REQUIRED_BASE = ['MONGODB_URI', 'AWS_REGION', 'S3_BUCKET_NAME'];
+
+// JWT secrets are required in production.  In test mode the setup file
+// provides placeholder values so the test runner is not blocked.
+const REQUIRED_JWT =
+  process.env.NODE_ENV === 'test'
+    ? []
+    : ['JWT_SECRET', 'JWT_REFRESH_SECRET'];
+
+const missing = [...REQUIRED_BASE, ...REQUIRED_JWT].filter(
+  (key) => !process.env[key]
+);
 
 if (missing.length > 0) {
   console.error(

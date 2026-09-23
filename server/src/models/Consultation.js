@@ -28,6 +28,18 @@ const NoteSchema = new mongoose.Schema(
 
 const ConsultationSchema = new mongoose.Schema(
   {
+    // ── Phase 1A — user ownership ─────────────────────────────────────────
+    // userId is nullable so that existing V1 documents (which pre-date
+    // authentication) remain valid.  The API layer enforces that all NEW
+    // consultations receive userId = req.user.id from the authenticated token.
+    // V1 documents with userId: null are invisible to authenticated V2 users
+    // because all queries filter by { userId: req.user.id }.
+    userId: {
+      type:    mongoose.Schema.Types.ObjectId,
+      ref:     'User',
+      default: null,
+    },
+
     transcript: { type: String, default: '' },
     note:       { type: NoteSchema, default: () => ({}) },
     status: {
@@ -91,3 +103,8 @@ const ConsultationSchema = new mongoose.Schema(
 );
 
 module.exports = mongoose.model('Consultation', ConsultationSchema);
+
+// Compound index: user-scoped consultation list sorted by newest first.
+// Defined after model creation so it is clearly associated with the schema.
+// This index powers: Consultation.find({ userId }).sort({ createdAt: -1 })
+mongoose.model('Consultation').schema.index({ userId: 1, createdAt: -1 });
