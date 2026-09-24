@@ -1,8 +1,13 @@
 import { useEffect, useRef, useState } from 'react'
+import { BrowserRouter, Navigate, Route, Routes, useNavigate } from 'react-router-dom'
 import AudioRecorder from './AudioRecorder.jsx'
 import ClinicalNoteReview from './ClinicalNoteReview.jsx'
 import Dashboard from './Dashboard.jsx'
-import { apiUrl } from './api.js'
+import { AuthProvider, useAuth } from './contexts/AuthContext.jsx'
+import PrivateRoute from './components/layout/PrivateRoute.jsx'
+import LoginPage from './pages/LoginPage.jsx'
+import RegisterPage from './pages/RegisterPage.jsx'
+import { apiFetch, apiUrl } from './api.js'
 import './App.css'
 
 // ---------------------------------------------------------------------------
@@ -54,14 +59,56 @@ const PIPELINE_STEPS = [
 ]
 
 // ---------------------------------------------------------------------------
-// App
+// TopBar — shown on every authenticated screen
 // ---------------------------------------------------------------------------
-function App() {
+function TopBar({ apiStatus }) {
+  const { user, logout } = useAuth()
+  const navigate         = useNavigate()
+
+  async function handleLogout() {
+    await logout()
+    navigate('/login', { replace: true })
+  }
+
+  return (
+    <header className="app-topbar">
+      <div className="app-topbar-brand">
+        <span className="app-logo-mark" aria-hidden="true">VS</span>
+        <span className="app-brand-name">VoiceScribe</span>
+      </div>
+      <span className="app-topbar-sub">Clinical documentation assistant</span>
+      <div className="app-topbar-right">
+        {apiStatus && (
+          <>
+            <span className="app-api-dot" title={apiStatus} aria-label={`API status: ${apiStatus}`} />
+            <span className="app-api-label">{apiStatus}</span>
+          </>
+        )}
+        {user && (
+          <div className="app-user-chip">
+            <span className="app-user-name">{user.displayName}</span>
+            <button
+              type="button"
+              className="app-logout-btn"
+              onClick={handleLogout}
+              aria-label="Sign out"
+            >
+              Sign out
+            </button>
+          </div>
+        )}
+      </div>
+    </header>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// DashboardApp — the entire V1 consultation workflow, now behind auth
+// ---------------------------------------------------------------------------
+function DashboardApp() {
   const [apiStatus, setApiStatus] = useState('Checking API…')
   const [stage, setStageRaw]      = useState(STAGE.DASHBOARD)
 
-  // Always use setStage() (not setStageRaw) so stageRef stays in sync.
-  // This prevents stale-closure bugs in callbacks registered once (e.g. handleStageChange).
   function setStage(next) {
     stageRef.current = next
     setStageRaw(next)
@@ -69,8 +116,6 @@ function App() {
 
   const [pipelineStep, setPipelineStep]   = useState('')
   const [pipelineError, setPipelineError] = useState('')
-  // Preserved during processing so the Bedrock-retry path can reuse them
-  // without requiring a re-upload.
   const [pendingObjectKey, setPendingObjectKey]   = useState('')
   const [pendingTranscript, setPendingTranscript] = useState('')
   const [processingFailed, setProcessingFailed]   = useState(false)
@@ -83,17 +128,13 @@ function App() {
   const [detectedLanguages, setDetectedLanguages]       = useState([])
   const [speakerUtterances, setSpeakerUtterances]       = useState([])
   const [speakerRoleMapping, setSpeakerRoleMapping]     = useState({})
+  const [dashboardRefresh, setDashboardRefresh]         = useState(0)
 
-  // Bump to force Dashboard to re-fetch after a save/approve
-  const [dashboardRefresh, setDashboardRefresh] = useState(0)
-
-  // Ref that mirrors the current stage value for use inside callbacks
-  // (avoids stale-closure bugs where the closure captures the initial value).
   const stageRef = useRef(STAGE.DASHBOARD)
 
   // ── Health-check ──────────────────────────────────────────────────────────
   useEffect(() => {
-    fetch(apiUrl('/api/health'))
+    apiFetch('/api/health')
       .then((r) => r.json())
       .then((d) => setApiStatus(d.success ? d.message : 'API responded unexpectedly'))
       .catch(() => setApiStatus('API is not reachable yet'))
@@ -108,9 +149,6 @@ function App() {
       setStage(STAGE.PROCESSING)
     }
     if (recorderStage === 'error') {
-      // Use stageRef.current (not the stage state variable) to avoid the
-      // stale-closure bug where stage is still RECORDING when the async
-      // upload/transcription error arrives.
       if (stageRef.current === STAGE.PROCESSING) {
         setProcessingFailed(true)
         setPipelineError('Processing failed. Please check your connection and try again.')
@@ -123,30 +161,22 @@ function App() {
     setTranscript(rawTranscript)
     setDetectedLanguages(langs)
     setSpeakerUtterances(utterances)
-    // Preserve for Bedrock retry without re-uploading / re-transcribing
     setPendingObjectKey(objectKey)
     setPendingTranscript(rawTranscript)
-    // 'analyzing' covers the language + speaker data that just came back
     setPipelineStep('analyzing')
     setPipelineError('')
     setProcessingFailed(false)
-
-    // Brief visual pause so the doctor sees 'analyzing' complete before
-    // the step advances to 'extracting'. This is not a fake timer —
-    // the data has already been processed by this point.
     await delay(400)
     await runBedrockExtraction(objectKey, rawTranscript)
   }
 
-  // Separated so it can be called both from handleTranscriptReady AND from
-  // the Retry button without duplicating logic.
   async function runBedrockExtraction(objectKey, rawTranscript) {
     setPipelineStep('extracting')
     setPipelineError('')
     setProcessingFailed(false)
 
     try {
-      const res  = await fetch(apiUrl('/api/extract-note'), {
+      const res  = await apiFetch('/api/extract-note', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify({ transcript: rawTranscript, objectKey }),
@@ -161,7 +191,6 @@ function App() {
             : 'Unable to generate the clinical note.'
         )
         setProcessingFailed(true)
-        // Stay on the processing screen — doctor can retry or continue manually
         return
       }
 
@@ -179,13 +208,11 @@ function App() {
     }
   }
 
-  // ── Retry Bedrock extraction using the preserved transcript ───────────────
   function handleRetryExtraction() {
     if (!pendingTranscript) return
     runBedrockExtraction(pendingObjectKey, pendingTranscript)
   }
 
-  // ── Continue to review with a blank note (when Bedrock fails) ─────────────
   function handleContinueManually() {
     setNote(BLANK_NOTE)
     setBedrockFailed(true)
@@ -204,7 +231,6 @@ function App() {
     return new Promise((resolve) => setTimeout(resolve, ms))
   }
 
-  // ── Demo shortcut ─────────────────────────────────────────────────────────
   function loadDemo() {
     setTranscript(DEMO_TRANSCRIPT)
     setNote(DEMO_NOTE)
@@ -217,10 +243,9 @@ function App() {
     setStage(STAGE.REVIEW)
   }
 
-  // ── Open from dashboard ───────────────────────────────────────────────────
   async function handleOpenConsultation(summary) {
     try {
-      const res  = await fetch(apiUrl(`/api/consultations/${summary._id}`))
+      const res  = await apiFetch(`/api/consultations/${summary._id}`)
       const data = await res.json()
       if (!data.success) { alert(`Could not load consultation: ${data.message}`); return }
       const c = data.consultation
@@ -238,7 +263,6 @@ function App() {
     }
   }
 
-  // ── Back to dashboard ─────────────────────────────────────────────────────
   function handleBack() {
     setStage(STAGE.DASHBOARD)
     setTranscript('')
@@ -256,7 +280,6 @@ function App() {
     setProcessingFailed(false)
   }
 
-  // ── After save/approve — refresh dashboard ────────────────────────────────
   function handleSaved(id) {
     setActiveConsultationId(id)
     setDashboardRefresh((n) => n + 1)
@@ -266,31 +289,16 @@ function App() {
   // PROCESSING SCREEN
   // ==========================================================================
   if (stage === STAGE.PROCESSING) {
-    const activeIndex = PIPELINE_STEPS.findIndex((s) => s.key === pipelineStep)
-    // If no step is active yet (pipelineStep is ''), treat all as pending
+    const activeIndex   = PIPELINE_STEPS.findIndex((s) => s.key === pipelineStep)
     const resolvedActive = activeIndex >= 0 ? activeIndex : 0
-
-    // A recorder-level error (upload/transcription failure) means the
-    // AudioRecorder itself is showing the error message, but we are still on
-    // the processing screen.  Give the user a clear path back.
-    const recorderFailed = pipelineStep === '' && !processingFailed
 
     return (
       <div className="app-shell">
-        <header className="app-topbar">
-          <div className="app-topbar-brand">
-            <span className="app-logo-mark" aria-hidden="true">VS</span>
-            <span className="app-brand-name">VoiceScribe</span>
-          </div>
-          <span className="app-topbar-sub">Clinical documentation assistant</span>
-        </header>
-
+        <TopBar apiStatus={null} />
         <main className="page page--centered">
           <div className="pipeline-card">
             <p className="pipeline-title">
-              {processingFailed
-                ? 'Processing stopped'
-                : 'Processing consultation…'}
+              {processingFailed ? 'Processing stopped' : 'Processing consultation…'}
             </p>
 
             <ol className="pipeline-steps" aria-label="Pipeline progress">
@@ -298,10 +306,7 @@ function App() {
                 const isDone   = idx < resolvedActive
                 const isActive = idx === resolvedActive && !processingFailed
                 const isFailed = processingFailed && idx === resolvedActive
-                const cls = isFailed ? 'is-failed'
-                          : isDone   ? 'is-done'
-                          : isActive ? 'is-active'
-                          : ''
+                const cls = isFailed ? 'is-failed' : isDone ? 'is-done' : isActive ? 'is-active' : ''
                 return (
                   <li key={key} className={`pipeline-step ${cls}`}>
                     <span className="pipeline-step-icon" aria-hidden="true">
@@ -316,36 +321,22 @@ function App() {
               })}
             </ol>
 
-            {/* ── Error state with recovery options ── */}
             {processingFailed && pipelineError && (
               <div className="pipeline-error-block" role="alert">
                 <p className="pipeline-error-msg">{pipelineError}</p>
                 <div className="pipeline-error-actions">
-                  {/* Retry is only possible if we have a preserved transcript */}
                   {pendingTranscript && (
-                    <button
-                      type="button"
-                      className="pipeline-retry-btn"
-                      onClick={handleRetryExtraction}
-                    >
+                    <button type="button" className="pipeline-retry-btn" onClick={handleRetryExtraction}>
                       Try again
                     </button>
                   )}
-                  <button
-                    type="button"
-                    className="pipeline-manual-btn"
-                    onClick={handleContinueManually}
-                    title="Open the review screen and fill in the note manually"
-                  >
+                  <button type="button" className="pipeline-manual-btn" onClick={handleContinueManually}>
                     Fill in note manually
                   </button>
                   <button
                     type="button"
                     className="pipeline-back-btn"
-                    onClick={() => {
-                      handleBack()
-                      setStage(STAGE.RECORDING)
-                    }}
+                    onClick={() => { handleBack(); setStage(STAGE.RECORDING) }}
                   >
                     ← Back to recording
                   </button>
@@ -353,7 +344,6 @@ function App() {
               </div>
             )}
 
-            {/* Non-processing error (e.g. upload/transcription failed inline in recorder) */}
             {!processingFailed && pipelineError && (
               <div className="pipeline-error" role="alert">
                 <strong>Note:</strong> {pipelineError}
@@ -371,14 +361,7 @@ function App() {
   if (stage === STAGE.REVIEW && note) {
     return (
       <div className="app-shell">
-        <header className="app-topbar">
-          <div className="app-topbar-brand">
-            <span className="app-logo-mark" aria-hidden="true">VS</span>
-            <span className="app-brand-name">VoiceScribe</span>
-          </div>
-          <span className="app-topbar-sub">Clinical documentation assistant</span>
-        </header>
-
+        <TopBar apiStatus={null} />
         <main className="page page--review">
           <ClinicalNoteReview
             note={note}
@@ -398,34 +381,16 @@ function App() {
   }
 
   // ==========================================================================
-  // RECORDING PANEL — shown inline in the workspace when recording is active
+  // DASHBOARD (default)
   // ==========================================================================
   const showRecorder = stage === STAGE.RECORDING
 
-  // ==========================================================================
-  // DASHBOARD (default)
-  // ==========================================================================
   return (
     <div className="app-shell">
-
-      {/* ── Top bar ── */}
-      <header className="app-topbar">
-        <div className="app-topbar-brand">
-          <span className="app-logo-mark" aria-hidden="true">VS</span>
-          <span className="app-brand-name">VoiceScribe</span>
-        </div>
-        <span className="app-topbar-sub">Clinical documentation assistant</span>
-        <div className="app-topbar-right">
-          <span className="app-api-dot" title={apiStatus} aria-label={`API status: ${apiStatus}`} />
-          <span className="app-api-label">{apiStatus}</span>
-        </div>
-      </header>
+      <TopBar apiStatus={apiStatus} />
 
       <main className="app-workspace">
-
-        {/* ── Left column: hero + recorder ── */}
         <aside className="workspace-left">
-
           <div className="workspace-hero">
             <h1 className="workspace-hero-title">
               {showRecorder ? 'Recording consultation' : 'New consultation'}
@@ -441,7 +406,6 @@ function App() {
             </p>
           </div>
 
-          {/* Workflow steps */}
           <ol className="stepper" aria-label="Workflow steps">
             {['Record', 'Transcribe', 'Extract note', 'Review & Approve'].map((label, idx) => (
               <li key={label} className={`stepper-item ${idx === 0 && showRecorder ? 'is-active' : idx === 0 && !showRecorder ? 'is-idle' : ''}`}>
@@ -451,7 +415,6 @@ function App() {
             ))}
           </ol>
 
-          {/* Recorder or "start" prompt */}
           {showRecorder ? (
             <AudioRecorder
               onTranscriptReady={handleTranscriptReady}
@@ -459,31 +422,22 @@ function App() {
             />
           ) : (
             <div className="workspace-start-card">
-              <button
-                type="button"
-                className="ws-start-btn"
-                onClick={() => setStage(STAGE.RECORDING)}
-              >
+              <button type="button" className="ws-start-btn" onClick={() => setStage(STAGE.RECORDING)}>
                 <span className="ws-start-icon" aria-hidden="true">🎙</span>
                 Start recording
               </button>
-              <p className="ws-start-hint">
-                Microphone access will be requested when you start.
-              </p>
+              <p className="ws-start-hint">Microphone access will be requested when you start.</p>
             </div>
           )}
 
-          {/* Demo shortcut — clearly secondary, dev-only */}
           <div className="demo-block">
             <p className="demo-label">⚙️ Dev shortcut — load demo data without recording</p>
             <button type="button" className="recorder-button secondary small" onClick={loadDemo}>
               Load demo note
             </button>
           </div>
-
         </aside>
 
-        {/* ── Right column: dashboard ── */}
         <section className="workspace-right">
           <Dashboard
             onOpen={handleOpenConsultation}
@@ -491,10 +445,32 @@ function App() {
             refreshTrigger={dashboardRefresh}
           />
         </section>
-
       </main>
     </div>
   )
 }
 
-export default App
+// ---------------------------------------------------------------------------
+// App root — Router + AuthProvider + routes
+// ---------------------------------------------------------------------------
+export default function App() {
+  return (
+    <BrowserRouter>
+      <AuthProvider>
+        <Routes>
+          {/* Public routes */}
+          <Route path="/login"    element={<LoginPage />} />
+          <Route path="/register" element={<RegisterPage />} />
+
+          {/* Protected routes */}
+          <Route element={<PrivateRoute />}>
+            <Route path="/dashboard" element={<DashboardApp />} />
+          </Route>
+
+          {/* Default redirect */}
+          <Route path="*" element={<Navigate to="/dashboard" replace />} />
+        </Routes>
+      </AuthProvider>
+    </BrowserRouter>
+  )
+}

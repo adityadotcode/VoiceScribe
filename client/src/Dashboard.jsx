@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { apiUrl } from './api.js'
+import { apiFetch } from './api.js'
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -97,7 +97,7 @@ function Dashboard({ onOpen, onNewConsultation, refreshTrigger = 0 }) {
     setLoading(true)
     setError('')
     try {
-      const res  = await fetch(apiUrl('/api/consultations'))
+      const res  = await apiFetch('/api/consultations')
       const data = await res.json()
       if (!data.success) {
         setError(data.message || 'Could not load consultations.')

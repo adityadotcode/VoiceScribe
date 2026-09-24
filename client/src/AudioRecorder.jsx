@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { apiUrl } from './api.js'
+import { apiFetch, apiUrl } from './api.js'
 
 // Preferred MIME types in priority order.
 const RECORDER_MIME_TYPES = [
@@ -310,7 +310,7 @@ function AudioRecorder({ onTranscriptReady, onStageChange }) {
     formData.append('audio', file)
 
     try {
-      const res  = await fetch(apiUrl('/api/audio'), { method: 'POST', body: formData })
+      const res  = await apiFetch('/api/audio', { method: 'POST', body: formData })
       const data = await res.json()
 
       if (!res.ok || !data.success) {
@@ -350,7 +350,7 @@ function AudioRecorder({ onTranscriptReady, onStageChange }) {
 
   async function transcribeRecording(key) {
     try {
-      const res  = await fetch(apiUrl('/api/transcribe'), {
+      const res  = await apiFetch('/api/transcribe', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ objectKey: key }),

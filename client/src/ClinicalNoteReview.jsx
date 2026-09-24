@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useReducer, useRef, useState } from 'react'
-import { apiUrl } from './api.js'
+import { apiFetch } from './api.js'
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -171,14 +171,14 @@ function EditableList({ label, fieldKey, items, dispatch, evidenceMap, disabled 
 // ---------------------------------------------------------------------------
 async function apiSave(consultationId, payload) {
   if (consultationId) {
-    const res = await fetch(apiUrl(`/api/consultations/${consultationId}`), {
+    const res = await apiFetch(`/api/consultations/${consultationId}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     })
     return res.json()
   }
-  const res = await fetch(apiUrl('/api/consultations'), {
+  const res = await apiFetch('/api/consultations', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
