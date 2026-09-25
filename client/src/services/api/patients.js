@@ -51,3 +51,13 @@ export async function apiGetPatientConsultations(patientId) {
   const res = await apiFetch(`/api/patients/${patientId}/consultations`);
   return res.json();
 }
+
+/**
+ * Get the most recent effective approved consultation for a patient.
+ * Correction-aware: ignores notes where supersededBy or correctionOf is set.
+ * Returns { success, consultation } or { success: false } with 404 when none.
+ */
+export async function apiGetLastApproved(patientId) {
+  const res = await apiFetch(`/api/patients/${patientId}/last-approved`);
+  return res.json();
+}

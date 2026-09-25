@@ -10,6 +10,7 @@ import RegisterPage from './pages/RegisterPage.jsx'
 import PatientListPage from './pages/PatientListPage.jsx'
 import NewPatientPage from './pages/NewPatientPage.jsx'
 import PatientProfilePage from './pages/PatientProfilePage.jsx'
+import NewConsultationPage from './pages/NewConsultationPage.jsx'
 import { apiFetch, apiUrl } from './api.js'
 import './App.css'
 
@@ -81,8 +82,9 @@ function TopBar({ apiStatus }) {
       </div>
       <span className="app-topbar-sub">Clinical documentation assistant</span>
       <nav className="app-topbar-nav" aria-label="Main navigation">
-        <Link to="/dashboard" className="app-nav-link">Consultations</Link>
-        <Link to="/patients"  className="app-nav-link">Patients</Link>
+        <Link to="/dashboard"         className="app-nav-link">Consultations</Link>
+        <Link to="/consultation/new"  className="app-nav-link">New consultation</Link>
+        <Link to="/patients"          className="app-nav-link">Patients</Link>
       </nav>
       <div className="app-topbar-right">
         {apiStatus && (
@@ -471,10 +473,11 @@ export default function App() {
 
           {/* Protected routes */}
           <Route element={<PrivateRoute />}>
-            <Route path="/dashboard"    element={<DashboardApp />} />
-            <Route path="/patients"     element={<PatientListPage />} />
-            <Route path="/patients/new" element={<NewPatientPage />} />
-            <Route path="/patients/:id" element={<PatientProfilePage />} />
+            <Route path="/dashboard"        element={<DashboardApp />} />
+            <Route path="/consultation/new" element={<NewConsultationPage />} />
+            <Route path="/patients"         element={<PatientListPage />} />
+            <Route path="/patients/new"     element={<NewPatientPage />} />
+            <Route path="/patients/:id"     element={<PatientProfilePage />} />
           </Route>
 
           {/* Default redirect */}
