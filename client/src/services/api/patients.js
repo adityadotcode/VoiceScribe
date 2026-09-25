@@ -41,3 +41,13 @@ export async function apiUpdatePatient(id, body) {
   });
   return res.json();
 }
+
+/**
+ * Get the consultation history for a specific patient.
+ * Returns { success, consultations } — newest first.
+ * Requires the patient to belong to the authenticated user.
+ */
+export async function apiGetPatientConsultations(patientId) {
+  const res = await apiFetch(`/api/patients/${patientId}/consultations`);
+  return res.json();
+}

@@ -2913,3 +2913,207 @@
   .pt-form-row { grid-template-columns: 1fr; }
   .pt-detail-grid { grid-template-columns: 1fr; }
 }
+
+/* ============================================================
+   Phase 3B.1 — Patient consultation history
+   Prefix: ph-  (patient history)
+   ============================================================ */
+
+.ph-section {
+  margin-top: 24px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 20px 24px 24px;
+}
+
+/* ── Section header ── */
+.ph-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+
+.ph-heading {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text-h);
+  margin: 0;
+}
+
+.ph-refresh-btn {
+  appearance: none;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  color: var(--text-sub);
+  font: inherit;
+  font-size: 12px;
+  padding: 4px 10px;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+.ph-refresh-btn:hover { background: var(--surface-2); color: var(--text); }
+
+/* ── State messages ── */
+.ph-loading {
+  font-size: 13px;
+  color: var(--text-sub);
+  margin: 0;
+  padding: 24px 0;
+  text-align: center;
+}
+
+.ph-error {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 11px 14px;
+  background: var(--red-bg);
+  border: 1px solid var(--red-border);
+  border-radius: var(--radius-md);
+  color: var(--red);
+  font-size: 13px;
+}
+
+.ph-empty {
+  font-size: 13px;
+  color: var(--text-sub);
+  text-align: center;
+  padding: 32px 0;
+  margin: 0;
+}
+
+/* ── History list ── */
+.ph-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.ph-item {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  transition: border-color 0.12s, box-shadow 0.12s;
+}
+
+.ph-item:hover {
+  border-color: #bfdbfe;
+  box-shadow: 0 1px 6px rgba(37, 99, 235, 0.08);
+}
+
+/* Superseded rows are visually de-emphasised */
+.ph-item--superseded {
+  opacity: 0.55;
+}
+
+.ph-item-main {
+  flex: 1;
+  min-width: 0;
+}
+
+/* ── Top row: date + badges ── */
+.ph-item-top {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 5px;
+}
+
+.ph-date {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-sub);
+}
+
+/* ── Status/correction badges ── */
+.ph-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: lowercase;
+}
+
+.ph-badge--draft {
+  background: var(--surface-2);
+  color: var(--text-sub);
+  border: 1px solid var(--border);
+}
+
+.ph-badge--approved {
+  background: var(--green-bg);
+  color: var(--green);
+  border: 1px solid var(--green-border);
+}
+
+.ph-badge--correction {
+  background: var(--amber-bg);
+  color: var(--amber);
+  border: 1px solid var(--amber-border);
+}
+
+.ph-badge--superseded {
+  background: var(--surface-2);
+  color: var(--text-sub);
+  border: 1px solid var(--border);
+  text-decoration: line-through;
+}
+
+/* ── Chief complaint ── */
+.ph-complaint {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-h);
+  margin: 0 0 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ph-no-complaint {
+  font-weight: 400;
+  color: var(--text-sub);
+}
+
+/* ── Encounter type ── */
+.ph-encounter {
+  font-size: 11px;
+  color: var(--text-sub);
+  text-transform: capitalize;
+}
+
+/* ── Open button (disabled until Phase 3B.2) ── */
+.ph-open-btn {
+  flex-shrink: 0;
+  appearance: none;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  color: var(--text-sub);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 6px 14px;
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+@media (max-width: 600px) {
+  .ph-section { padding: 16px; }
+  .ph-item { flex-direction: column; align-items: flex-start; gap: 10px; }
+  .ph-open-btn { align-self: flex-end; }
+}

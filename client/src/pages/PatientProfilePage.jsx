@@ -1,6 +1,10 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { apiGetPatient, apiUpdatePatient } from '../services/api/patients.js';
+import {
+  apiGetPatient,
+  apiUpdatePatient,
+  apiGetPatientConsultations,
+} from '../services/api/patients.js';
 
 const SEX_OPTIONS = [
   { value: 'male',       label: 'Male' },
@@ -20,15 +24,161 @@ function sexLabel(v) {
   return SEX_OPTIONS.find((o) => o.value === v)?.label ?? v ?? '—';
 }
 
+/** Format a date+time for the consultation list. */
+function formatConsultationDate(iso) {
+  if (!iso) return '—';
+  return new Date(iso).toLocaleDateString(undefined, {
+    year: 'numeric', month: 'short', day: 'numeric',
+  });
+}
+
+// ---------------------------------------------------------------------------
+// ConsultationHistorySection
+// ---------------------------------------------------------------------------
+// Isolated sub-component so its loading state is independent from the
+// patient-load state above it.
+function ConsultationHistorySection({ patientId }) {
+  const [consultations, setConsultations] = useState([]);
+  const [loading,       setLoading]       = useState(true);
+  const [error,         setError]         = useState('');
+
+  async function load() {
+    setLoading(true);
+    setError('');
+    try {
+      const data = await apiGetPatientConsultations(patientId);
+      if (!data.success) {
+        setError(data.message || 'Could not load consultation history.');
+      } else {
+        setConsultations(data.consultations);
+      }
+    } catch {
+      setError('Network error — could not load consultation history.');
+    }
+    setLoading(false);
+  }
+
+  useEffect(() => { load(); }, [patientId]);
+
+  return (
+    <section className="ph-section" aria-labelledby="ph-heading">
+      <div className="ph-section-header">
+        <h2 className="ph-heading" id="ph-heading">Consultation history</h2>
+        {!loading && (
+          <button
+            type="button"
+            className="ph-refresh-btn"
+            onClick={load}
+            aria-label="Refresh consultation history"
+          >
+            ↻ Refresh
+          </button>
+        )}
+      </div>
+
+      {/* Loading */}
+      {loading && (
+        <p className="ph-loading" aria-live="polite">Loading history…</p>
+      )}
+
+      {/* Error */}
+      {!loading && error && (
+        <div className="ph-error" role="alert">
+          {error}
+          <button type="button" className="pt-retry-btn" onClick={load}>Retry</button>
+        </div>
+      )}
+
+      {/* Empty */}
+      {!loading && !error && consultations.length === 0 && (
+        <p className="ph-empty">No consultations recorded for this patient yet.</p>
+      )}
+
+      {/* History list */}
+      {!loading && !error && consultations.length > 0 && (
+        <ul className="ph-list" role="list">
+          {consultations.map((c) => (
+            <ConsultationRow key={c._id} consultation={c} />
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// ConsultationRow
+// ---------------------------------------------------------------------------
+function ConsultationRow({ consultation: c }) {
+  const isSuperseded = Boolean(c.supersededBy);
+  const isCorrection = Boolean(c.correctionOf);
+
+  // /consultation/:id route is not implemented yet (Phase 3B.2).
+  // Render as a static row with an "Open" button that is disabled + labelled.
+  return (
+    <li className={`ph-item${isSuperseded ? ' ph-item--superseded' : ''}`}>
+      <div className="ph-item-main">
+
+        {/* Top row: date + status badge */}
+        <div className="ph-item-top">
+          <span className="ph-date">
+            {formatConsultationDate(c.consultationDate ?? c.createdAt)}
+          </span>
+          <span className={`ph-badge ph-badge--${c.status}`}>
+            {c.status}
+          </span>
+          {isCorrection && (
+            <span className="ph-badge ph-badge--correction" title="This note corrects an earlier consultation">
+              correction
+            </span>
+          )}
+          {isSuperseded && (
+            <span className="ph-badge ph-badge--superseded" title="This note has been superseded by a correction">
+              superseded
+            </span>
+          )}
+        </div>
+
+        {/* Chief complaint */}
+        <p className="ph-complaint">
+          {c.note?.chief_complaint
+            ? c.note.chief_complaint
+            : <em className="ph-no-complaint">No chief complaint recorded</em>
+          }
+        </p>
+
+        {/* Encounter type */}
+        {c.encounterType && (
+          <span className="ph-encounter">{c.encounterType.replace('_', ' ')}</span>
+        )}
+      </div>
+
+      {/* Open action — deferred until /consultation/:id is built (Phase 3B.2) */}
+      <button
+        type="button"
+        className="ph-open-btn"
+        disabled
+        aria-label="Open consultation (coming soon)"
+        title="Consultation detail view coming in a future update"
+      >
+        Open
+      </button>
+    </li>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// PatientProfilePage
+// ---------------------------------------------------------------------------
 export default function PatientProfilePage() {
   const { id }   = useParams();
   const navigate = useNavigate();
 
-  const [patient,   setPatient]   = useState(null);
-  const [loading,   setLoading]   = useState(true);
-  const [error,     setError]     = useState('');
-  const [editing,   setEditing]   = useState(false);
-  const [editFields, setEditFields] = useState({});
+  const [patient,     setPatient]     = useState(null);
+  const [loading,     setLoading]     = useState(true);
+  const [error,       setError]       = useState('');
+  const [editing,     setEditing]     = useState(false);
+  const [editFields,  setEditFields]  = useState({});
   const [fieldErrors, setFieldErrors] = useState({});
   const [saveError,   setSaveError]   = useState('');
   const [saving,      setSaving]      = useState(false);
@@ -288,10 +438,8 @@ export default function PatientProfilePage() {
         </dl>
       </div>
 
-      {/* Consultation history placeholder — Phase 3 */}
-      <div className="pt-future-section">
-        <p className="pt-future-hint">Consultation history will appear here in a future update.</p>
-      </div>
+      {/* Consultation history — Phase 3B.1 */}
+      <ConsultationHistorySection patientId={id} />
     </div>
   );
 }
