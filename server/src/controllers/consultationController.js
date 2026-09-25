@@ -1,5 +1,6 @@
 const mongoose     = require('mongoose');
 const Consultation = require('../models/Consultation');
+const Patient      = require('../models/Patient');
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -16,6 +17,10 @@ function parseBody(body) {
     speakerUtterances,
     detectedLanguages,
     speakerRoleMapping,
+    // Phase 3A create-time fields
+    patientId,
+    consultationDate,
+    encounterType,
   } = body;
 
   if (transcript !== undefined && typeof transcript !== 'string') {
@@ -45,6 +50,18 @@ function parseBody(body) {
     errors.push('speakerRoleMapping must be an object');
   }
 
+  if (
+    encounterType !== undefined &&
+    !['in_person', 'telemedicine', 'upload'].includes(encounterType)
+  ) {
+    errors.push('encounterType must be one of: in_person, telemedicine, upload');
+  }
+
+  if (consultationDate !== undefined) {
+    const d = new Date(consultationDate);
+    if (isNaN(d.getTime())) errors.push('consultationDate must be a valid date');
+  }
+
   return {
     errors,
     transcript,
@@ -53,6 +70,9 @@ function parseBody(body) {
     speakerUtterances,
     detectedLanguages,
     speakerRoleMapping,
+    patientId,
+    consultationDate,
+    encounterType,
   };
 }
 
@@ -70,10 +90,20 @@ function validateObjectId(id, res) {
 // ---------------------------------------------------------------------------
 async function createConsultation(req, res) {
   const { errors, transcript, note, status,
-          speakerUtterances, detectedLanguages, speakerRoleMapping } = parseBody(req.body);
+          speakerUtterances, detectedLanguages, speakerRoleMapping,
+          patientId, consultationDate, encounterType } = parseBody(req.body);
 
   if (errors.length) {
     return res.status(400).json({ success: false, message: errors.join('; ') });
+  }
+
+  // ── patientId required ────────────────────────────────────────────────
+  if (!patientId) {
+    return res.status(400).json({ success: false, message: 'patientId is required.' });
+  }
+
+  if (!mongoose.isValidObjectId(patientId)) {
+    return res.status(400).json({ success: false, message: 'patientId is not a valid ID.' });
   }
 
   // chief_complaint required when approving immediately
@@ -85,13 +115,28 @@ async function createConsultation(req, res) {
   }
 
   try {
+    // ── Verify the patient belongs to this user and is not archived ───────
+    const patient = await Patient.findOne({
+      _id:        patientId,
+      userId:     req.user.id,
+      isArchived: false,
+    }).lean();
+
+    if (!patient) {
+      return res.status(404).json({ success: false, message: 'Patient not found.' });
+    }
+
     const doc = await Consultation.create({
-      // userId is always set from the verified token — never from the client.
+      // userId always from verified token — never from the client.
       userId:             req.user.id,
-      transcript:         transcript         ?? '',
-      note:               note               ?? {},
-      status:             status             ?? 'draft',
+      patientId,
+      consultationDate:   consultationDate ? new Date(consultationDate) : new Date(),
+      encounterType:      encounterType    ?? 'in_person',
+      transcript:         transcript       ?? '',
+      note:               note             ?? {},
+      status:             status           ?? 'draft',
       approvedAt:         status === 'approved' ? new Date() : null,
+      approvedBy:         status === 'approved' ? req.user.id : null,
       speakerUtterances:  speakerUtterances  ?? [],
       detectedLanguages:  detectedLanguages  ?? [],
       speakerRoleMapping: speakerRoleMapping ?? {},
@@ -206,11 +251,14 @@ async function updateConsultation(req, res) {
     if (speakerUtterances  !== undefined) existing.speakerUtterances  = speakerUtterances;
     if (detectedLanguages  !== undefined) existing.detectedLanguages  = detectedLanguages;
     if (speakerRoleMapping !== undefined) existing.speakerRoleMapping = speakerRoleMapping;
+    // patientId and userId are immutable after creation — silently ignore any
+    // attempt to change them via PUT.
 
     if (status !== undefined) {
       existing.status = status;
       if (status === 'approved' && !existing.approvedAt) {
         existing.approvedAt = new Date();
+        existing.approvedBy = req.user.id;
       }
     }
 

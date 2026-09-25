@@ -40,6 +40,48 @@ const ConsultationSchema = new mongoose.Schema(
       default: null,
     },
 
+    // ── Phase 3A — patient link ───────────────────────────────────────────
+    // Nullable for V1 back-compat; API layer requires it on all new creates.
+    patientId: {
+      type:    mongoose.Schema.Types.ObjectId,
+      ref:     'Patient',
+      default: null,
+    },
+
+    // Date/time of the clinical encounter (defaults to creation time).
+    consultationDate: {
+      type:    Date,
+      default: () => new Date(),
+    },
+
+    // How the consultation was conducted.
+    encounterType: {
+      type:    String,
+      enum:    ['in_person', 'telemedicine', 'upload'],
+      default: 'in_person',
+    },
+
+    // Clinician who approved the note (populated on approve action).
+    approvedBy: {
+      type:    mongoose.Schema.Types.ObjectId,
+      ref:     'User',
+      default: null,
+    },
+
+    // Correction chain — links an amended note to the original it replaces.
+    // correctionOf:  the _id of the consultation this note corrects.
+    // supersededBy:  the _id of the newer note that replaces this one.
+    correctionOf: {
+      type:    mongoose.Schema.Types.ObjectId,
+      ref:     'Consultation',
+      default: null,
+    },
+    supersededBy: {
+      type:    mongoose.Schema.Types.ObjectId,
+      ref:     'Consultation',
+      default: null,
+    },
+
     transcript: { type: String, default: '' },
     note:       { type: NoteSchema, default: () => ({}) },
     status: {
@@ -108,3 +150,9 @@ module.exports = mongoose.model('Consultation', ConsultationSchema);
 // Defined after model creation so it is clearly associated with the schema.
 // This index powers: Consultation.find({ userId }).sort({ createdAt: -1 })
 mongoose.model('Consultation').schema.index({ userId: 1, createdAt: -1 });
+
+// Phase 3A indexes — patient history queries.
+// Powers: Consultation.find({ patientId }).sort({ createdAt: -1 })
+mongoose.model('Consultation').schema.index({ patientId: 1, createdAt: -1 });
+// Powers: last-approved query scoped by both user and patient.
+mongoose.model('Consultation').schema.index({ userId: 1, patientId: 1, createdAt: -1 });

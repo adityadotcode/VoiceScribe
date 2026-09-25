@@ -1,5 +1,6 @@
-const mongoose = require('mongoose');
-const Patient  = require('../models/Patient');
+const mongoose     = require('mongoose');
+const Patient      = require('../models/Patient');
+const Consultation = require('../models/Consultation');
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -247,4 +248,95 @@ async function updatePatient(req, res) {
   }
 }
 
-module.exports = { createPatient, listPatients, getPatient, updatePatient };
+module.exports = { createPatient, listPatients, getPatient, updatePatient, listPatientConsultations, getLastApproved };
+
+
+// ---------------------------------------------------------------------------
+// GET /api/patients/:id/consultations
+// ---------------------------------------------------------------------------
+// Returns a summary list of all consultations for the given patient,
+// newest first.  Patient must belong to the authenticated user.
+async function listPatientConsultations(req, res) {
+  if (!validateObjectId(req.params.id, res)) return;
+
+  const userId    = req.user.id;
+  const patientId = req.params.id;
+
+  try {
+    // Verify patient ownership before exposing any consultation data.
+    const patient = await Patient.findOne({
+      _id:    patientId,
+      userId,
+    }).lean();
+
+    if (!patient) {
+      return res.status(404).json({ success: false, message: 'Patient not found.' });
+    }
+
+    // Return summary fields only — full note is available via GET /consultations/:id.
+    const consultations = await Consultation.find({ patientId, userId })
+      .sort({ createdAt: -1 })
+      .select('_id status consultationDate encounterType note.chief_complaint createdAt approvedAt approvedBy correctionOf supersededBy')
+      .lean();
+
+    return res.json({ success: true, consultations });
+  } catch (err) {
+    console.error('[patientController] listPatientConsultations error:', err.message);
+    return res.status(500).json({ success: false, message: 'Failed to fetch consultations.' });
+  }
+}
+
+// ---------------------------------------------------------------------------
+// GET /api/patients/:id/last-approved
+// ---------------------------------------------------------------------------
+// Returns the most recent approved consultation for this patient that has
+// not been superseded by a correction.  Ignores notes where supersededBy is
+// set (those are the originals that were replaced) and ignores notes that are
+// themselves corrections of another (correctionOf is set) so we only surface
+// the canonical, current-approved record.
+//
+// Correction-aware query:
+//   status='approved', supersededBy=null, correctionOf=null
+//   sorted by consultationDate descending → first result is the current note.
+//
+// Returns 404 when no such consultation exists (patient has no approved notes
+// yet, or all approved notes have been superseded).
+async function getLastApproved(req, res) {
+  if (!validateObjectId(req.params.id, res)) return;
+
+  const userId    = req.user.id;
+  const patientId = req.params.id;
+
+  try {
+    // Verify patient ownership.
+    const patient = await Patient.findOne({
+      _id:    patientId,
+      userId,
+    }).lean();
+
+    if (!patient) {
+      return res.status(404).json({ success: false, message: 'Patient not found.' });
+    }
+
+    const consultation = await Consultation.findOne({
+      patientId,
+      userId,
+      status:       'approved',
+      supersededBy: null,
+      correctionOf: null,
+    })
+      .sort({ consultationDate: -1 })
+      // Return the full note context fields used for pre-filling a new encounter.
+      .select('_id consultationDate encounterType note approvedAt approvedBy createdAt')
+      .lean();
+
+    if (!consultation) {
+      return res.status(404).json({ success: false, message: 'No approved consultation found for this patient.' });
+    }
+
+    return res.json({ success: true, consultation });
+  } catch (err) {
+    console.error('[patientController] getLastApproved error:', err.message);
+    return res.status(500).json({ success: false, message: 'Failed to fetch last approved consultation.' });
+  }
+}

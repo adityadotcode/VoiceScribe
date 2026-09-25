@@ -41,6 +41,17 @@ jest.mock('../../src/models/User', () => {
 });
 const User = require('../../src/models/User');
 
+// ── Patient model mock ───────────────────────────────────────────────────
+// Phase 3A: consultationController now imports Patient to verify ownership.
+jest.mock('../../src/models/Patient', () => {
+  return {
+    findOne: jest.fn(),
+    find:    jest.fn(),
+    create:  jest.fn(),
+  };
+});
+const Patient = require('../../src/models/Patient');
+
 // ── Consultation model mock ──────────────────────────────────────────────
 jest.mock('../../src/models/Consultation', () => {
   return {
@@ -391,12 +402,19 @@ describe('Consultation authorization', () => {
   });
 
   test('19. client-supplied userId is ignored; req.user.id is used', async () => {
+    // Phase 3A: createConsultation now requires a patientId and verifies
+    // patient ownership, so we must supply both a valid patientId and a
+    // Patient.findOne mock that returns a matching patient.
+    const patientId = '111111111111111111111111';
+    Patient.findOne.mockReturnValueOnce(
+      leanResult({ _id: patientId, userId: ID_A, isArchived: false })
+    );
     Consultation.create.mockResolvedValueOnce(makeConsultation());
 
     await request(app)
       .post('/api/consultations')
       .set('Authorization', `Bearer ${tokenA}`)
-      .send({ userId: 'hacker-id', note: { chief_complaint: 'test', symptoms: [] } });
+      .send({ patientId, userId: 'hacker-id', note: { chief_complaint: 'test', symptoms: [] } });
 
     expect(Consultation.create).toHaveBeenCalledWith(
       expect.objectContaining({ userId: ID_A })
