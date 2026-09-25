@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { BrowserRouter, Navigate, Route, Routes, useNavigate } from 'react-router-dom'
+import { BrowserRouter, Link, Navigate, Route, Routes, useNavigate } from 'react-router-dom'
 import AudioRecorder from './AudioRecorder.jsx'
 import ClinicalNoteReview from './ClinicalNoteReview.jsx'
 import Dashboard from './Dashboard.jsx'
@@ -7,6 +7,9 @@ import { AuthProvider, useAuth } from './contexts/AuthContext.jsx'
 import PrivateRoute from './components/layout/PrivateRoute.jsx'
 import LoginPage from './pages/LoginPage.jsx'
 import RegisterPage from './pages/RegisterPage.jsx'
+import PatientListPage from './pages/PatientListPage.jsx'
+import NewPatientPage from './pages/NewPatientPage.jsx'
+import PatientProfilePage from './pages/PatientProfilePage.jsx'
 import { apiFetch, apiUrl } from './api.js'
 import './App.css'
 
@@ -77,6 +80,10 @@ function TopBar({ apiStatus }) {
         <span className="app-brand-name">VoiceScribe</span>
       </div>
       <span className="app-topbar-sub">Clinical documentation assistant</span>
+      <nav className="app-topbar-nav" aria-label="Main navigation">
+        <Link to="/dashboard" className="app-nav-link">Consultations</Link>
+        <Link to="/patients"  className="app-nav-link">Patients</Link>
+      </nav>
       <div className="app-topbar-right">
         {apiStatus && (
           <>
@@ -464,7 +471,10 @@ export default function App() {
 
           {/* Protected routes */}
           <Route element={<PrivateRoute />}>
-            <Route path="/dashboard" element={<DashboardApp />} />
+            <Route path="/dashboard"    element={<DashboardApp />} />
+            <Route path="/patients"     element={<PatientListPage />} />
+            <Route path="/patients/new" element={<NewPatientPage />} />
+            <Route path="/patients/:id" element={<PatientProfilePage />} />
           </Route>
 
           {/* Default redirect */}

@@ -8,8 +8,8 @@
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "test": "vitest run",
-    "test:watch": "vitest"
+    "test": "vitest run --pool=forks",
+    "test:watch": "vitest --pool=forks"
   },
   "dependencies": {
     "react": "^19.2.8",
