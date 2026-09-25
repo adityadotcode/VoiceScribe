@@ -496,6 +496,9 @@ function ClinicalNoteReview({
   speakerUtterances = [],
   initialSpeakerRoleMapping = {},
   initialConsultationId = null,
+  // Phase 3B.2B — patient context threaded from NewConsultationPage
+  patientId   = null,
+  patientName = null,
   onBack,
   onSaved,
 }) {
@@ -585,6 +588,15 @@ function ClinicalNoteReview({
     setSaveError('')
     setValidationError('')
 
+    // New consultations require a patientId (Phase 3B.2B).
+    // A consultationId being present means this is an existing doc — patientId
+    // is already stored on the backend and cannot be changed via PUT.
+    if (!consultationId && !patientId) {
+      setValidationError('No patient selected. Go back and select a patient before saving.')
+      setIsSaving(false)
+      return
+    }
+
     const payload = {
       transcript,
       note: noteState,
@@ -592,6 +604,9 @@ function ClinicalNoteReview({
       speakerUtterances,
       detectedLanguages,
       speakerRoleMapping,
+      // Only include patientId for new consultations (POST).
+      // PUT ignores it on the backend (immutable after creation).
+      ...(!consultationId && patientId ? { patientId } : {}),
     }
 
     try {
@@ -623,6 +638,12 @@ function ClinicalNoteReview({
       return
     }
 
+    // New consultations require a patientId (Phase 3B.2B).
+    if (!consultationId && !patientId) {
+      setValidationError('No patient selected. Go back and select a patient before approving.')
+      return
+    }
+
     setIsSaving(true)
     const payload = {
       transcript,
@@ -631,6 +652,7 @@ function ClinicalNoteReview({
       speakerUtterances,
       detectedLanguages,
       speakerRoleMapping,
+      ...(!consultationId && patientId ? { patientId } : {}),
     }
 
     try {
@@ -662,6 +684,16 @@ function ClinicalNoteReview({
         <span aria-hidden="true">⚠️</span>
         AI-generated draft — Doctor review required
       </div>
+
+      {/* Patient context banner — shown when arriving from NewConsultationPage */}
+      {patientName && (
+        <div className="cnr-patient-banner" role="status" aria-label="Selected patient">
+          <span className="cnr-patient-banner-icon" aria-hidden="true">👤</span>
+          <span className="cnr-patient-banner-text">
+            Patient: <strong>{patientName}</strong>
+          </span>
+        </div>
+      )}
 
       {/* Demo notice */}
       {isDemo && (

@@ -3469,3 +3469,23 @@
   color: var(--text-sub);
   margin: 0;
 }
+
+/* ============================================================
+   Phase 3B.2B — ClinicalNoteReview patient context banner
+   ============================================================ */
+
+.cnr-patient-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 14px;
+  background: var(--brand-light);
+  border: 1px solid #bfdbfe;
+  border-radius: var(--radius-md);
+  margin-bottom: 10px;
+  font-size: 13px;
+  color: var(--text-h);
+}
+
+.cnr-patient-banner-icon { font-size: 15px; }
+.cnr-patient-banner-text { flex: 1; }

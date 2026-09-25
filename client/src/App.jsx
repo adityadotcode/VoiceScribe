@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { BrowserRouter, Link, Navigate, Route, Routes, useNavigate } from 'react-router-dom'
+import { BrowserRouter, Link, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import AudioRecorder from './AudioRecorder.jsx'
 import ClinicalNoteReview from './ClinicalNoteReview.jsx'
 import Dashboard from './Dashboard.jsx'
@@ -117,6 +117,7 @@ function TopBar({ apiStatus }) {
 function DashboardApp() {
   const [apiStatus, setApiStatus] = useState('Checking API…')
   const [stage, setStageRaw]      = useState(STAGE.DASHBOARD)
+  const location                  = useLocation()
 
   function setStage(next) {
     stageRef.current = next
@@ -139,7 +140,29 @@ function DashboardApp() {
   const [speakerRoleMapping, setSpeakerRoleMapping]     = useState({})
   const [dashboardRefresh, setDashboardRefresh]         = useState(0)
 
+  // ── Phase 3B.2B — patient context threaded from NewConsultationPage ──────
+  // Populated when the doctor arrives via /consultation/new → Start consultation.
+  // Cleared when they go Back from the review screen.
+  const [activePatientId,   setActivePatientId]   = useState(null)
+  const [activePatientName, setActivePatientName] = useState(null)
+
   const stageRef = useRef(STAGE.DASHBOARD)
+
+  // Read patientId / patientName from router state set by NewConsultationPage.
+  // Only consumed once on mount so that navigating away and back to /dashboard
+  // normally (without state) doesn't re-inject a stale patient context.
+  useEffect(() => {
+    const state = location.state
+    if (state?.patientId) {
+      setActivePatientId(state.patientId)
+      setActivePatientName(state.patientName ?? null)
+    }
+    if (state?.startRecording) {
+      setStage(STAGE.RECORDING)
+    }
+    // Intentionally run only on mount — do not re-run on location changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // ── Health-check ──────────────────────────────────────────────────────────
   useEffect(() => {
@@ -287,6 +310,9 @@ function DashboardApp() {
     setPendingObjectKey('')
     setPendingTranscript('')
     setProcessingFailed(false)
+    // Clear patient context — a fresh recording from the dashboard has no pre-selected patient
+    setActivePatientId(null)
+    setActivePatientName(null)
   }
 
   function handleSaved(id) {
@@ -381,6 +407,8 @@ function DashboardApp() {
             speakerUtterances={speakerUtterances}
             initialSpeakerRoleMapping={speakerRoleMapping}
             initialConsultationId={activeConsultationId}
+            patientId={activePatientId}
+            patientName={activePatientName}
             onBack={handleBack}
             onSaved={handleSaved}
           />

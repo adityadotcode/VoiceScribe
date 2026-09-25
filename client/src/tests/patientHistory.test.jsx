@@ -30,6 +30,17 @@ vi.mock('../services/api/patients.js', () => ({
   apiGetPatientConsultations:  vi.fn(),
 }));
 
+// Mock api.js so cross-test module cache contamination from other test files
+// (e.g. patientIdWiring.test.jsx which mocks apiFetch directly) cannot
+// cause apiFetch to return undefined here.
+vi.mock('../api.js', () => ({
+  apiFetch:       vi.fn(),
+  apiUrl:         (p) => p,
+  setAuthToken:   vi.fn(),
+  clearAuthToken: vi.fn(),
+  getAuthToken:   vi.fn(),
+}));
+
 import {
   apiGetPatient,
   apiGetPatientConsultations,

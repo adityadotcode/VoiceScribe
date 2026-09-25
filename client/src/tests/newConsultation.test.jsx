@@ -33,6 +33,16 @@ vi.mock('../services/api/patients.js', () => ({
   apiCreatePatient:            vi.fn(),
 }));
 
+// Defensive: mock api.js so cross-test apiFetch contamination cannot
+// bleed into this file when tests run in the same Vitest worker.
+vi.mock('../api.js', () => ({
+  apiFetch:       vi.fn(),
+  apiUrl:         (p) => p,
+  setAuthToken:   vi.fn(),
+  clearAuthToken: vi.fn(),
+  getAuthToken:   vi.fn(),
+}));
+
 import {
   apiListPatients,
   apiGetLastApproved,
