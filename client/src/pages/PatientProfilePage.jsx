@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
   apiGetPatient,
   apiUpdatePatient,
@@ -113,8 +113,6 @@ function ConsultationRow({ consultation: c }) {
   const isSuperseded = Boolean(c.supersededBy);
   const isCorrection = Boolean(c.correctionOf);
 
-  // /consultation/:id route is not implemented yet (Phase 3B.2).
-  // Render as a static row with an "Open" button that is disabled + labelled.
   return (
     <li className={`ph-item${isSuperseded ? ' ph-item--superseded' : ''}`}>
       <div className="ph-item-main">
@@ -153,16 +151,14 @@ function ConsultationRow({ consultation: c }) {
         )}
       </div>
 
-      {/* Open action — deferred until /consultation/:id is built (Phase 3B.2) */}
-      <button
-        type="button"
-        className="ph-open-btn"
-        disabled
-        aria-label="Open consultation (coming soon)"
-        title="Consultation detail view coming in a future update"
+      {/* Open action — navigates to /consultation/:id */}
+      <Link
+        to={`/consultation/${c._id}`}
+        className="ph-open-btn ph-open-btn--active"
+        aria-label={`Open consultation from ${formatConsultationDate(c.consultationDate ?? c.createdAt)}`}
       >
         Open
-      </button>
+      </Link>
     </li>
   );
 }

@@ -11,6 +11,7 @@ import PatientListPage from './pages/PatientListPage.jsx'
 import NewPatientPage from './pages/NewPatientPage.jsx'
 import PatientProfilePage from './pages/PatientProfilePage.jsx'
 import NewConsultationPage from './pages/NewConsultationPage.jsx'
+import ConsultationDetailPage from './pages/ConsultationDetailPage.jsx'
 import { apiFetch, apiUrl } from './api.js'
 import './App.css'
 
@@ -501,11 +502,12 @@ export default function App() {
 
           {/* Protected routes */}
           <Route element={<PrivateRoute />}>
-            <Route path="/dashboard"        element={<DashboardApp />} />
-            <Route path="/consultation/new" element={<NewConsultationPage />} />
-            <Route path="/patients"         element={<PatientListPage />} />
-            <Route path="/patients/new"     element={<NewPatientPage />} />
-            <Route path="/patients/:id"     element={<PatientProfilePage />} />
+            <Route path="/dashboard"           element={<DashboardApp />} />
+            <Route path="/consultation/new"    element={<NewConsultationPage />} />
+            <Route path="/consultation/:id"    element={<ConsultationDetailPage />} />
+            <Route path="/patients"            element={<PatientListPage />} />
+            <Route path="/patients/new"        element={<NewPatientPage />} />
+            <Route path="/patients/:id"        element={<PatientProfilePage />} />
           </Route>
 
           {/* Default redirect */}

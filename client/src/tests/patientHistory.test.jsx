@@ -62,7 +62,8 @@ function renderPage() {
   return render(
     <MemoryRouter initialEntries={[`/patients/${PATIENT_ID}`]}>
       <Routes>
-        <Route path="/patients/:id" element={<PatientProfilePage />} />
+        <Route path="/patients/:id"     element={<PatientProfilePage />} />
+        <Route path="/consultation/:id" element={<div data-testid="consultation-detail">Detail</div>} />
       </Routes>
     </MemoryRouter>
   );
@@ -255,7 +256,7 @@ describe('5. correction/superseded indicators', () => {
     });
   });
 
-  test('Open button is disabled (deferred to Phase 3B.2)', async () => {
+  test('Open link is active and navigates to /consultation/:id (Phase 3C.1)', async () => {
     apiGetPatientConsultations.mockResolvedValue({
       success: true,
       consultations: [makeConsultation()],
@@ -267,7 +268,9 @@ describe('5. correction/superseded indicators', () => {
       expect(screen.getByText('Persistent cough')).toBeInTheDocument();
     });
 
-    const openBtn = screen.getByRole('button', { name: /open consultation/i });
-    expect(openBtn).toBeDisabled();
+    // The Open action is now a Link (<a>), not a disabled button.
+    const openLink = screen.getByRole('link', { name: /open consultation/i });
+    expect(openLink).not.toBeDisabled();
+    expect(openLink).toHaveAttribute('href', `/consultation/cccccccccccccccccccccccc`);
   });
 });
