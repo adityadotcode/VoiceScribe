@@ -119,6 +119,7 @@ function DashboardApp() {
   const [apiStatus, setApiStatus] = useState('Checking API…')
   const [stage, setStageRaw]      = useState(STAGE.DASHBOARD)
   const location                  = useLocation()
+  const navigate                  = useNavigate()
 
   function setStage(next) {
     stageRef.current = next
@@ -479,7 +480,7 @@ function DashboardApp() {
         <section className="workspace-right">
           <Dashboard
             onOpen={handleOpenConsultation}
-            onNewConsultation={() => setStage(STAGE.RECORDING)}
+            onNewConsultation={() => navigate('/consultation/new')}
             refreshTrigger={dashboardRefresh}
           />
         </section>
