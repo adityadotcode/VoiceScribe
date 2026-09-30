@@ -63,17 +63,21 @@ export async function apiGetLastApproved(patientId) {
 }
 
 /**
- * Request a deterministic change summary for a consultation compared against
- * the previous effective approved consultation for the same patient.
- * Returns { success, hasPreviousConsultation, previousConsultation, structuredDiff }.
+ * Request a deterministic change summary, with an optional Bedrock narrative.
+ * Returns { success, hasPreviousConsultation, previousConsultation, structuredDiff,
+ *           clinicalSummary?, generatedAt?, narrativeError? }.
  *
- * Phase 4B endpoint: POST /api/patients/:patientId/change-summary
+ * @param {string}  patientId
+ * @param {string}  currentConsultationId
+ * @param {boolean} [generateNarrative=false]  Pass true to request Bedrock summary.
+ *
+ * Phase 4B / 4D.1 endpoint: POST /api/patients/:patientId/change-summary
  */
-export async function apiGetChangeSummary(patientId, currentConsultationId) {
+export async function apiGetChangeSummary(patientId, currentConsultationId, generateNarrative = false) {
   const res = await apiFetch(`/api/patients/${patientId}/change-summary`, {
     method:  'POST',
     headers: { 'Content-Type': 'application/json' },
-    body:    JSON.stringify({ currentConsultationId }),
+    body:    JSON.stringify({ currentConsultationId, generateNarrative }),
   });
   return res.json();
 }

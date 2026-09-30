@@ -153,7 +153,7 @@ describe('3. clicking button calls the API', () => {
     );
 
     await waitFor(() => {
-      expect(apiGetChangeSummary).toHaveBeenCalledWith(PATIENT_ID, CONSULTATION_ID);
+      expect(apiGetChangeSummary).toHaveBeenCalledWith(PATIENT_ID, CONSULTATION_ID, false);
     });
   });
 });
@@ -394,5 +394,218 @@ describe('10. missing IDs — panel renders nothing', () => {
       </MemoryRouter>
     );
     expect(container.firstChild).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 11 — Phase 4D.2: Generate clinical summary button and narrative flow
+// ---------------------------------------------------------------------------
+
+/**
+ * Response fixture for a successful diff WITH a previous consultation.
+ * Used as the base state before testing the narrative flow.
+ */
+function makeDiffWithPrevious(diffOverrides = {}) {
+  return {
+    success:                 true,
+    hasPreviousConsultation: true,
+    previousConsultation: {
+      id:               'bbbbbbbbbbbbbbbbbbbbbbbb',
+      consultationDate: '2026-08-01T09:00:00.000Z',
+    },
+    structuredDiff: {
+      newSymptoms:                ['fatigue'],
+      resolvedSymptoms:           [],
+      persistingSymptoms:         ['cough'],
+      newMedicationsMentioned:    [],
+      stoppedMedicationsMentioned: [],
+      newObservations:            [],
+      resolvedObservations:       [],
+      assessmentChanged:          false,
+      chiefComplaintChanged:      false,
+      followUpChanged:            false,
+      historyChanged:             false,
+      ...diffOverrides,
+    },
+  };
+}
+
+/** Helper: get to the "done" diff state first, then return screen. */
+async function getToResult(diffResponse) {
+  apiGetChangeSummary.mockResolvedValueOnce(diffResponse);
+  renderPanel();
+  await userEvent.click(
+    screen.getByRole('button', { name: /compare with previous visit/i })
+  );
+  await waitFor(() => {
+    // diff result visible — "Compared with" text or no-changes message
+    const hasDiffContent =
+      screen.queryByText(/compared with/i) ||
+      screen.queryByText(/no changes detected/i);
+    expect(hasDiffContent).toBeInTheDocument();
+  });
+}
+
+describe('11. Phase 4D.2 — Generate clinical summary', () => {
+  // ── 11.1 Generate button appears only when previous consultation exists ──
+  test('11.1 "Generate clinical summary" button visible when previous consultation exists', async () => {
+    await getToResult(makeDiffWithPrevious());
+    expect(
+      screen.getByRole('button', { name: /generate clinical summary/i })
+    ).toBeInTheDocument();
+  });
+
+  test('11.1b "Generate clinical summary" button NOT shown when no previous consultation', async () => {
+    apiGetChangeSummary.mockResolvedValueOnce(noPreviousResponse);
+    renderPanel();
+    await userEvent.click(
+      screen.getByRole('button', { name: /compare with previous visit/i })
+    );
+    await waitFor(() => {
+      expect(
+        screen.getByText(/no previous approved consultation available for comparison/i)
+      ).toBeInTheDocument();
+    });
+    expect(
+      screen.queryByRole('button', { name: /generate clinical summary/i })
+    ).not.toBeInTheDocument();
+  });
+
+  // ── 11.2 Clicking it sends generateNarrative=true ─────────────────────
+  test('11.2 clicking "Generate clinical summary" calls API with generateNarrative=true', async () => {
+    await getToResult(makeDiffWithPrevious());
+
+    // Second call: narrative request
+    apiGetChangeSummary.mockResolvedValueOnce({
+      success:         true,
+      hasPreviousConsultation: true,
+      previousConsultation: {},
+      structuredDiff: {},
+      clinicalSummary: 'Patient improved.',
+      generatedAt:    '2026-09-24T09:00:00.000Z',
+    });
+
+    await userEvent.click(
+      screen.getByRole('button', { name: /generate clinical summary/i })
+    );
+
+    await waitFor(() => {
+      expect(apiGetChangeSummary).toHaveBeenLastCalledWith(
+        PATIENT_ID, CONSULTATION_ID, true
+      );
+    });
+  });
+
+  // ── 11.3 Loading state shown ───────────────────────────────────────────
+  test('11.3 loading state shown while narrative is generating', async () => {
+    await getToResult(makeDiffWithPrevious());
+
+    // Second call: never resolves
+    apiGetChangeSummary.mockReturnValueOnce(new Promise(() => {}));
+
+    await userEvent.click(
+      screen.getByRole('button', { name: /generate clinical summary/i })
+    );
+
+    expect(screen.getByText(/generating clinical summary/i)).toBeInTheDocument();
+    // Diff still visible
+    expect(screen.getByText('fatigue')).toBeInTheDocument();
+  });
+
+  // ── 11.4 Returned clinicalSummary displayed ────────────────────────────
+  test('11.4 clinicalSummary text displayed with "AI Clinical Summary" label', async () => {
+    await getToResult(makeDiffWithPrevious());
+
+    apiGetChangeSummary.mockResolvedValueOnce({
+      success:         true,
+      hasPreviousConsultation: true,
+      previousConsultation: {},
+      structuredDiff: {},
+      clinicalSummary: 'Patient presents with new onset fatigue.',
+      generatedAt:    '2026-09-24T09:00:00.000Z',
+    });
+
+    await userEvent.click(
+      screen.getByRole('button', { name: /generate clinical summary/i })
+    );
+
+    await waitFor(() => {
+      expect(
+        screen.getByText('Patient presents with new onset fatigue.')
+      ).toBeInTheDocument();
+    });
+    expect(screen.getByText(/AI Clinical Summary/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/not a diagnosis or prescription/i)
+    ).toBeInTheDocument();
+  });
+
+  // ── 11.5 Bedrock failure message shown ────────────────────────────────
+  test('11.5 narrative error message shown when clinicalSummary is null', async () => {
+    await getToResult(makeDiffWithPrevious());
+
+    apiGetChangeSummary.mockResolvedValueOnce({
+      success:         true,
+      hasPreviousConsultation: true,
+      previousConsultation: {},
+      structuredDiff: {},
+      clinicalSummary: null,
+      narrativeError: 'Unable to generate clinical summary.',
+    });
+
+    await userEvent.click(
+      screen.getByRole('button', { name: /generate clinical summary/i })
+    );
+
+    await waitFor(() => {
+      expect(
+        screen.getByText(/clinical summary could not be generated/i)
+      ).toBeInTheDocument();
+    });
+  });
+
+  // ── 11.6 Structured diff remains visible on failure ────────────────────
+  test('11.6 structured diff remains visible when narrative generation fails', async () => {
+    await getToResult(makeDiffWithPrevious());
+
+    apiGetChangeSummary.mockRejectedValueOnce(new Error('Network timeout'));
+
+    await userEvent.click(
+      screen.getByRole('button', { name: /generate clinical summary/i })
+    );
+
+    await waitFor(() => {
+      expect(
+        screen.getByText(/clinical summary could not be generated/i)
+      ).toBeInTheDocument();
+    });
+
+    // Diff still visible after narrative failure
+    expect(screen.getByText('fatigue')).toBeInTheDocument();
+    expect(screen.getByText('cough')).toBeInTheDocument();
+  });
+
+  // ── 11.7 Narrative not requested automatically ─────────────────────────
+  test('11.7 narrative API call is NOT made automatically after diff loads', async () => {
+    await getToResult(makeDiffWithPrevious());
+    // Only one API call should have been made (the diff call)
+    expect(apiGetChangeSummary).toHaveBeenCalledTimes(1);
+    expect(apiGetChangeSummary).toHaveBeenLastCalledWith(
+      PATIENT_ID, CONSULTATION_ID, false
+    );
+  });
+
+  // ── 11.8 Compare button sends generateNarrative=false (unchanged) ──────
+  test('11.8 "Compare with previous visit" still sends generateNarrative=false', async () => {
+    apiGetChangeSummary.mockResolvedValueOnce(makeDiffWithPrevious());
+    renderPanel();
+    await userEvent.click(
+      screen.getByRole('button', { name: /compare with previous visit/i })
+    );
+    await waitFor(() => {
+      expect(apiGetChangeSummary).toHaveBeenCalledWith(
+        PATIENT_ID, CONSULTATION_ID, false
+      );
+    });
   });
 });
