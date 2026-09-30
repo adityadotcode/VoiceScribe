@@ -454,3 +454,155 @@ async function extractClinicalNote(transcript) {
 }
 
 module.exports = { extractClinicalNote, normalizeNote, recomputeMissingInformation }
+
+// ============================================================================
+// CHANGE-SUMMARY NARRATIVE  — Phase 4D.1
+// ============================================================================
+
+/**
+ * Serialise a note sub-document into a compact, readable text block for
+ * inclusion in the narrative prompt.  Redacts fields that have no clinical
+ * meaning for a comparison (internal IDs, timestamps, etc.).
+ *
+ * @param {object|null|undefined} note
+ * @param {string} label  e.g. "PREVIOUS CONSULTATION NOTE" | "CURRENT CONSULTATION NOTE"
+ * @returns {string}
+ */
+function serializeNoteForPrompt(note, label) {
+  if (!note || typeof note !== 'object') return `${label}:\n(empty)\n`;
+
+  const lines = [`${label}:`];
+
+  const str = (v) => (typeof v === 'string' && v.trim() ? v.trim() : '(not stated)');
+  const arr = (v) => (Array.isArray(v) && v.length > 0 ? v.join(', ') : '(none)');
+
+  lines.push(`  Chief complaint: ${str(note.chief_complaint)}`);
+  lines.push(`  Symptoms: ${arr(note.symptoms)}`);
+  lines.push(`  Duration/onset: ${str(note.duration)}`);
+  lines.push(`  History: ${str(note.history)}`);
+  lines.push(`  Observations: ${arr(note.observations)}`);
+  lines.push(`  Assessment: ${str(note.assessment)}`);
+  lines.push(`  Medications mentioned: ${arr(note.medications_mentioned)}`);
+  lines.push(`  Follow-up: ${str(note.follow_up)}`);
+
+  return lines.join('\n');
+}
+
+/**
+ * Serialise the structured diff from consultationDiffService into a readable
+ * text block so the model can reference it without re-deriving the changes.
+ *
+ * @param {object} diff
+ * @returns {string}
+ */
+function serializeDiffForPrompt(diff) {
+  if (!diff || typeof diff !== 'object') return 'STRUCTURED DIFF:\n(unavailable)\n';
+
+  const lines = ['STRUCTURED DIFF (deterministic — use these as ground truth):'];
+  const arr   = (v) => (Array.isArray(v) && v.length > 0 ? v.join(', ') : 'none');
+  const bool  = (v) => (v === true ? 'yes' : 'no');
+
+  lines.push(`  New symptoms: ${arr(diff.newSymptoms)}`);
+  lines.push(`  Resolved symptoms: ${arr(diff.resolvedSymptoms)}`);
+  lines.push(`  Persisting symptoms: ${arr(diff.persistingSymptoms)}`);
+  lines.push(`  New medications mentioned: ${arr(diff.newMedicationsMentioned)}`);
+  lines.push(`  Stopped medications mentioned: ${arr(diff.stoppedMedicationsMentioned)}`);
+  lines.push(`  New observations: ${arr(diff.newObservations)}`);
+  lines.push(`  Resolved observations: ${arr(diff.resolvedObservations)}`);
+  lines.push(`  Chief complaint changed: ${bool(diff.chiefComplaintChanged)}`);
+  lines.push(`  Assessment changed: ${bool(diff.assessmentChanged)}`);
+  lines.push(`  Follow-up changed: ${bool(diff.followUpChanged)}`);
+  lines.push(`  History changed: ${bool(diff.historyChanged)}`);
+
+  return lines.join('\n');
+}
+
+/**
+ * Calls Amazon Bedrock Nova Lite via the Converse API to generate a short
+ * clinician-readable narrative interpretation of the change between two
+ * consultation notes.
+ *
+ * Safety rules enforced in the prompt:
+ *   - Rely ONLY on the supplied notes and structuredDiff.
+ *   - Do NOT invent information not present in the supplied data.
+ *   - Do NOT diagnose, prescribe, or recommend treatment.
+ *   - medications_mentioned means mentioned during the consultation — NOT
+ *     medication reconciliation or confirmed starts/stops.
+ *   - Keep output under 200 words.
+ *   - Use concise, clinician-readable language.
+ *
+ * This function uses a plain Converse call (no tool forcing) because the
+ * output is a free-text summary, not a structured JSON object.
+ *
+ * @param {object|null|undefined} previousNote
+ * @param {object|null|undefined} currentNote
+ * @param {object}                structuredDiff  — output of diffNotes()
+ * @returns {Promise<string>}  The narrative text.
+ */
+async function generateChangeSummaryNarrative(previousNote, currentNote, structuredDiff) {
+  const prevBlock = serializeNoteForPrompt(previousNote, 'PREVIOUS CONSULTATION NOTE');
+  const currBlock = serializeNoteForPrompt(currentNote,  'CURRENT CONSULTATION NOTE');
+  const diffBlock = serializeDiffForPrompt(structuredDiff);
+
+  const userMessage =
+    'You are a medical documentation assistant helping a clinician understand how a ' +
+    "patient's condition has changed between two consultations.\n\n" +
+    'You have been given:\n' +
+    '1. The previous approved consultation note.\n' +
+    '2. The current consultation note.\n' +
+    '3. A deterministic structured diff that identifies exactly what changed.\n\n' +
+
+    'STRICT RULES — follow without exception:\n' +
+    '- Describe only differences that are supported by the supplied structured diff and notes.\n' +
+    '- DO NOT invent, infer, or assume information not present in the supplied data.\n' +
+    '- DO NOT diagnose, prescribe, recommend treatment, or make clinical decisions.\n' +
+    '- "medications_mentioned" means medications that were mentioned during the consultation ' +
+    'only. DO NOT state a medication was "started" or "stopped" — only that it was ' +
+    '"mentioned" or "no longer mentioned".\n' +
+    '- Keep the output under 200 words.\n' +
+    '- Use concise, clinician-readable language suitable for a clinical note addendum.\n' +
+    '- If the structured diff shows no changes, say so clearly and briefly.\n' +
+    '- Identify clinically notable changes without providing a diagnosis.\n' +
+    '- Do not repeat every diff item verbatim — synthesise into a readable paragraph.\n\n' +
+
+    `${prevBlock}\n\n${currBlock}\n\n${diffBlock}\n\n` +
+
+    'Write a concise clinical narrative (under 200 words) describing the notable ' +
+    'differences between the two consultations based solely on the information above.';
+
+  const command = new ConverseCommand({
+    modelId: MODEL_ID,
+    messages: [
+      {
+        role:    'user',
+        content: [{ text: userMessage }],
+      },
+    ],
+    inferenceConfig: {
+      maxTokens:   300,
+      temperature: 0.2,   // low temperature for consistent, factual output
+      topP:        0.9,
+    },
+  });
+
+  const response = await bedrockClient.send(command);
+
+  const outputMessage = response.output?.message;
+  if (!outputMessage) {
+    throw new Error('Bedrock returned no output message for narrative generation');
+  }
+
+  const textBlock = outputMessage.content?.find((block) => typeof block.text === 'string');
+  if (!textBlock) {
+    throw new Error('Bedrock narrative response contained no text block');
+  }
+
+  return textBlock.text.trim();
+}
+
+module.exports = {
+  extractClinicalNote,
+  normalizeNote,
+  recomputeMissingInformation,
+  generateChangeSummaryNarrative,
+};

@@ -2,6 +2,7 @@ const mongoose              = require('mongoose');
 const Patient               = require('../models/Patient');
 const Consultation          = require('../models/Consultation');
 const { diffNotes }         = require('../services/consultationDiffService');
+const { generateChangeSummaryNarrative } = require('../services/bedrockService');
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -375,7 +376,7 @@ async function getChangeSummary(req, res) {
   const patientId = req.params.id;
 
   // ── 2. Validate body ─────────────────────────────────────────────────────
-  const { currentConsultationId } = req.body;
+  const { currentConsultationId, generateNarrative = false } = req.body;
 
   if (!currentConsultationId) {
     return res.status(400).json({
@@ -442,6 +443,11 @@ async function getChangeSummary(req, res) {
         hasPreviousConsultation:  false,
         previousConsultation:     null,
         structuredDiff:           null,
+        // Narrative not possible without a previous consultation.
+        ...(generateNarrative === true && {
+          clinicalSummary:  null,
+          narrativeError:   'No previous approved consultation to compare against.',
+        }),
       });
     }
 
@@ -451,7 +457,30 @@ async function getChangeSummary(req, res) {
       currentConsultation.note,
     );
 
-    return res.json({
+    // ── 8. Optionally generate Bedrock narrative ──────────────────────────
+    // Bedrock is called ONLY when the client explicitly requests it.
+    // A failed narrative never prevents the structured diff from being returned.
+    let clinicalSummary  = undefined;
+    let generatedAt      = undefined;
+    let narrativeError   = undefined;
+
+    if (generateNarrative === true) {
+      try {
+        clinicalSummary = await generateChangeSummaryNarrative(
+          previousConsultation.note,
+          currentConsultation.note,
+          structuredDiff,
+        );
+        generatedAt = new Date().toISOString();
+      } catch (bedrockErr) {
+        console.error('[patientController] narrative generation failed:', bedrockErr.message);
+        // Do NOT expose internal AWS/Bedrock error details.
+        clinicalSummary = null;
+        narrativeError  = 'Unable to generate clinical summary.';
+      }
+    }
+
+    const responseBody = {
       success:                 true,
       hasPreviousConsultation: true,
       previousConsultation: {
@@ -460,7 +489,17 @@ async function getChangeSummary(req, res) {
           || previousConsultation.createdAt,
       },
       structuredDiff,
-    });
+    };
+
+    // Attach narrative fields only when requested to keep the Phase 4B
+    // response shape unchanged for callers that don't send generateNarrative.
+    if (generateNarrative === true) {
+      responseBody.clinicalSummary = clinicalSummary ?? null;
+      responseBody.generatedAt     = generatedAt    ?? null;
+      if (narrativeError) responseBody.narrativeError = narrativeError;
+    }
+
+    return res.json(responseBody);
   } catch (err) {
     console.error('[patientController] getChangeSummary error:', err.message);
     return res.status(500).json({ success: false, message: 'Failed to compute change summary.' });

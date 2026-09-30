@@ -7,7 +7,7 @@
     "start": "node src/server.js",
     "dev": "node --watch src/server.js",
     "build": "cd ../client && npm install && npm run build",
-    "test": "jest --runInBand --forceExit",
+    "test": "jest --runInBand --forceExit --testTimeout=30000",
     "test:watch": "jest --watch --runInBand"
   },
   "keywords": [],
