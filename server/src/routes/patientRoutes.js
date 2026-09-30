@@ -6,6 +6,7 @@ const {
   updatePatient,
   listPatientConsultations,
   getLastApproved,
+  getChangeSummary,
 } = require('../controllers/patientController');
 
 const router = express.Router();
@@ -20,5 +21,8 @@ router.put('/:id',  updatePatient);
 // Phase 3A — patient history endpoints
 router.get('/:id/consultations', listPatientConsultations);
 router.get('/:id/last-approved', getLastApproved);
+
+// Phase 4B — deterministic change summary
+router.post('/:id/change-summary', getChangeSummary);
 
 module.exports = router;

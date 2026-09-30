@@ -1,6 +1,7 @@
-const mongoose     = require('mongoose');
-const Patient      = require('../models/Patient');
-const Consultation = require('../models/Consultation');
+const mongoose              = require('mongoose');
+const Patient               = require('../models/Patient');
+const Consultation          = require('../models/Consultation');
+const { diffNotes }         = require('../services/consultationDiffService');
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -248,7 +249,7 @@ async function updatePatient(req, res) {
   }
 }
 
-module.exports = { createPatient, listPatients, getPatient, updatePatient, listPatientConsultations, getLastApproved };
+module.exports = { createPatient, listPatients, getPatient, updatePatient, listPatientConsultations, getLastApproved, getChangeSummary };
 
 
 // ---------------------------------------------------------------------------
@@ -338,5 +339,130 @@ async function getLastApproved(req, res) {
   } catch (err) {
     console.error('[patientController] getLastApproved error:', err.message);
     return res.status(500).json({ success: false, message: 'Failed to fetch last approved consultation.' });
+  }
+}
+
+// ---------------------------------------------------------------------------
+// POST /api/patients/:id/change-summary  — Phase 4B
+// ---------------------------------------------------------------------------
+// Compares the note of a specified current consultation against the most
+// recent effective approved consultation for the same patient, returning a
+// deterministic structured diff via consultationDiffService.
+//
+// Authorization:
+//   - Patient must belong to req.user.id.
+//   - Current consultation must belong to req.user.id AND to the patient
+//     identified by req.params.id.
+//   - userId is NEVER taken from the request body.
+//
+// Previous-consultation selection (correction-aware):
+//   Finds the most recent approved consultation where:
+//     - patientId  = req.params.id
+//     - userId     = req.user.id
+//     - status     = 'approved'
+//     - supersededBy = null    (not replaced by a correction)
+//     - correctionOf = null    (not itself a correction)
+//     - consultationDate < currentConsultation.consultationDate
+//   Sorted by consultationDate descending → first result is the comparison base.
+//
+// If no such previous consultation exists, responds with
+// { success: true, hasPreviousConsultation: false, ... } (not an error).
+async function getChangeSummary(req, res) {
+  // ── 1. Validate route param ──────────────────────────────────────────────
+  if (!validateObjectId(req.params.id, res)) return;
+
+  const userId    = req.user.id;   // always from token
+  const patientId = req.params.id;
+
+  // ── 2. Validate body ─────────────────────────────────────────────────────
+  const { currentConsultationId } = req.body;
+
+  if (!currentConsultationId) {
+    return res.status(400).json({
+      success: false,
+      message: 'currentConsultationId is required.',
+    });
+  }
+
+  if (!mongoose.isValidObjectId(currentConsultationId)) {
+    return res.status(400).json({
+      success: false,
+      message: 'currentConsultationId is not a valid ID.',
+    });
+  }
+
+  try {
+    // ── 3. Authorize patient ─────────────────────────────────────────────
+    const patient = await Patient.findOne({ _id: patientId, userId }).lean();
+
+    if (!patient) {
+      return res.status(404).json({ success: false, message: 'Patient not found.' });
+    }
+
+    // ── 4. Authorize & fetch current consultation ────────────────────────
+    // Must belong to this user AND to this patient to prevent cross-patient
+    // comparisons.  userId in the query — never from the client body.
+    const currentConsultation = await Consultation.findOne({
+      _id:       currentConsultationId,
+      userId,
+      patientId,
+    }).lean();
+
+    if (!currentConsultation) {
+      return res.status(404).json({ success: false, message: 'Consultation not found.' });
+    }
+
+    // ── 5. Find previous effective approved consultation ─────────────────
+    // Correction-aware: ignore notes that have been superseded (old originals)
+    // and notes that are themselves corrections of another note.  Only
+    // "standing" approved notes are valid comparison bases.
+    //
+    // We compare against consultationDate (the clinical encounter date).
+    // Fall back to createdAt if consultationDate is absent on old documents.
+    const currentDate = currentConsultation.consultationDate
+      || currentConsultation.createdAt;
+
+    const previousConsultation = await Consultation.findOne({
+      patientId,
+      userId,
+      status:           'approved',
+      supersededBy:     null,
+      correctionOf:     null,
+      // Strictly earlier than the current consultation's encounter date.
+      consultationDate: { $lt: currentDate },
+    })
+      .sort({ consultationDate: -1 })
+      .select('_id consultationDate note createdAt')
+      .lean();
+
+    // ── 6. No previous consultation — return graceful no-comparison ──────
+    if (!previousConsultation) {
+      return res.json({
+        success:                  true,
+        hasPreviousConsultation:  false,
+        previousConsultation:     null,
+        structuredDiff:           null,
+      });
+    }
+
+    // ── 7. Compute deterministic diff ────────────────────────────────────
+    const structuredDiff = diffNotes(
+      previousConsultation.note,
+      currentConsultation.note,
+    );
+
+    return res.json({
+      success:                 true,
+      hasPreviousConsultation: true,
+      previousConsultation: {
+        id:               previousConsultation._id,
+        consultationDate: previousConsultation.consultationDate
+          || previousConsultation.createdAt,
+      },
+      structuredDiff,
+    });
+  } catch (err) {
+    console.error('[patientController] getChangeSummary error:', err.message);
+    return res.status(500).json({ success: false, message: 'Failed to compute change summary.' });
   }
 }
