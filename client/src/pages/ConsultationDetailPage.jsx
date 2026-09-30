@@ -16,6 +16,7 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { apiGetConsultation } from '../services/api/consultations.js';
+import ChangeSummaryPanel from '../components/consultation/ChangeSummaryPanel.jsx';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -322,6 +323,21 @@ export default function ConsultationDetailPage() {
             {c.transcript}
           </div>
         </section>
+      )}
+
+      {/* Change summary — Phase 4C
+          Only shown when the consultation is linked to a patient, so the
+          backend can locate a previous effective approved note to compare.
+          The comparison is user-triggered, not automatic. */}
+      {c.patientId && (
+        <ChangeSummaryPanel
+          patientId={
+            typeof c.patientId === 'object' ? c.patientId.toString() : c.patientId
+          }
+          consultationId={
+            typeof c._id === 'object' ? c._id.toString() : (c._id ?? id)
+          }
+        />
       )}
     </div>
   );

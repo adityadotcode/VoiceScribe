@@ -61,3 +61,19 @@ export async function apiGetLastApproved(patientId) {
   const res = await apiFetch(`/api/patients/${patientId}/last-approved`);
   return res.json();
 }
+
+/**
+ * Request a deterministic change summary for a consultation compared against
+ * the previous effective approved consultation for the same patient.
+ * Returns { success, hasPreviousConsultation, previousConsultation, structuredDiff }.
+ *
+ * Phase 4B endpoint: POST /api/patients/:patientId/change-summary
+ */
+export async function apiGetChangeSummary(patientId, currentConsultationId) {
+  const res = await apiFetch(`/api/patients/${patientId}/change-summary`, {
+    method:  'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body:    JSON.stringify({ currentConsultationId }),
+  });
+  return res.json();
+}

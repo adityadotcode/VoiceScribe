@@ -3810,3 +3810,179 @@
   background: var(--brand-light);
   border-color: #bfdbfe;
 }
+
+/* ============================================================
+   Phase 4C — ChangeSummaryPanel
+   Prefix: cs-  (change summary)
+   ============================================================ */
+
+.cs-panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 18px 20px;
+  margin-bottom: 16px;
+}
+
+/* Idle state: just the trigger button, no card background */
+.cs-panel--idle {
+  background: transparent;
+  border: 1px dashed var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 14px 20px;
+}
+
+/* ── Trigger button ── */
+.cs-trigger-btn {
+  appearance: none;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  color: var(--brand);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 8px 20px;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s;
+}
+.cs-trigger-btn:hover {
+  background: var(--brand-light);
+  border-color: #bfdbfe;
+}
+
+/* ── Panel header (when result shown) ── */
+.cs-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.cs-panel-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-h);
+  margin: 0;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.cs-close-btn {
+  appearance: none;
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-size: 14px;
+  color: var(--text-sub);
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+}
+.cs-close-btn:hover { background: var(--surface-2); }
+
+/* ── State messages ── */
+.cs-loading {
+  font-size: 13px;
+  color: var(--text-sub);
+  margin: 0;
+  text-align: center;
+  padding: 12px 0;
+}
+
+.cs-error {
+  font-size: 13px;
+  color: var(--red);
+  margin-bottom: 10px;
+}
+
+.cs-retry-btn {
+  appearance: none;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  padding: 4px 12px;
+  cursor: pointer;
+}
+.cs-retry-btn:hover { background: var(--surface-2); }
+
+.cs-no-previous {
+  font-size: 13px;
+  color: var(--text-sub);
+  margin: 0;
+  font-style: italic;
+}
+
+.cs-compared-with {
+  font-size: 13px;
+  color: var(--text-sub);
+  margin: 0 0 14px;
+}
+
+.cs-no-changes {
+  font-size: 13px;
+  color: var(--text-sub);
+  margin: 0;
+  font-style: italic;
+}
+
+/* ── Diff body ── */
+.cs-diff-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.cs-diff-row {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.cs-diff-row--flag {
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+}
+
+.cs-diff-label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--text-sub);
+}
+
+/* ── Pill list ── */
+.cs-pill-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.cs-pill {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 2px 10px;
+  font-size: 12px;
+  color: var(--text-h);
+}
+
+/* ── Boolean flag indicator ── */
+.cs-flag-indicator {
+  font-size: 11px;
+  font-weight: 600;
+  background: var(--amber-bg);
+  border: 1px solid var(--amber-border);
+  color: var(--amber);
+  border-radius: 999px;
+  padding: 2px 8px;
+}
