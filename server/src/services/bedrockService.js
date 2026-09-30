@@ -447,8 +447,8 @@ async function extractClinicalNote(transcript) {
 
   const note = normalizeNote(rawNote)
 
-  console.log('[bedrockService] raw  :', JSON.stringify(rawNote))
-  console.log('[bedrockService] norm :', JSON.stringify(note))
+  // NOTE: console.log of rawNote and note removed — these contained
+  // full clinical note data (PHI) and must not appear in server logs.
 
   return note
 }

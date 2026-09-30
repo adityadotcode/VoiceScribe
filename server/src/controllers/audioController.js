@@ -17,7 +17,7 @@ async function postAudio(req, res) {
       message: 'Audio uploaded successfully.',
     });
   } catch (error) {
-    console.error('S3 upload failed:', error);
+    console.error('[audioController] S3 upload failed:', error.message);
 
     return res.status(502).json({
       success: false,

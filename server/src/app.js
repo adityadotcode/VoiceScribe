@@ -17,7 +17,10 @@ const app = express();
 app.use(helmet({ contentSecurityPolicy: false }));
 
 // ── CORS ──────────────────────────────────────────────────────────────────
-app.use(cors({ origin: clientOrigin }));
+// credentials: true is required so the browser sends the HTTP-only refresh
+// token cookie on cross-origin requests to /api/auth/refresh.
+// The origin is a single exact string from CLIENT_ORIGIN — never a wildcard.
+app.use(cors({ origin: clientOrigin, credentials: true }));
 
 // ── Body parsing ──────────────────────────────────────────────────────────
 app.use(express.json({ limit: '1mb' }));

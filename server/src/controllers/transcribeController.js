@@ -18,11 +18,11 @@ async function postTranscription(req, res) {
       ...result,
     });
   } catch (error) {
-    console.error('Transcription failed:', error);
+    console.error('[transcribeController] transcription failed:', error.message);
 
     return res.status(500).json({
       success: false,
-      message: error.message || 'Transcription failed.',
+      message: 'Transcription failed. Please try again.',
     });
   }
 }

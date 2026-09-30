@@ -144,7 +144,7 @@ async function createConsultation(req, res) {
 
     return res.status(201).json({ success: true, consultation: doc });
   } catch (err) {
-    console.error('[consultationController] create error:', err);
+    console.error('[consultationController] create error:', err.message);
     return res.status(500).json({ success: false, message: 'Failed to save consultation.' });
   }
 }
@@ -161,7 +161,7 @@ async function listConsultations(req, res) {
 
     return res.json({ success: true, consultations: docs });
   } catch (err) {
-    console.error('[consultationController] list error:', err);
+    console.error('[consultationController] list error:', err.message);
     return res.status(500).json({ success: false, message: 'Failed to fetch consultations.' });
   }
 }
@@ -186,7 +186,7 @@ async function getConsultation(req, res) {
 
     return res.json({ success: true, consultation: doc });
   } catch (err) {
-    console.error('[consultationController] get error:', err);
+    console.error('[consultationController] get error:', err.message);
     return res.status(500).json({ success: false, message: 'Failed to fetch consultation.' });
   }
 }
@@ -265,7 +265,7 @@ async function updateConsultation(req, res) {
     const saved = await existing.save();
     return res.json({ success: true, consultation: saved });
   } catch (err) {
-    console.error('[consultationController] update error:', err);
+    console.error('[consultationController] update error:', err.message);
     return res.status(500).json({ success: false, message: 'Failed to update consultation.' });
   }
 }
@@ -296,7 +296,7 @@ async function deleteConsultation(req, res) {
     await existing.deleteOne();
     return res.json({ success: true, message: 'Consultation deleted.' });
   } catch (err) {
-    console.error('[consultationController] delete error:', err);
+    console.error('[consultationController] delete error:', err.message);
     return res.status(500).json({ success: false, message: 'Failed to delete consultation.' });
   }
 }

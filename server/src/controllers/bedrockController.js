@@ -46,18 +46,21 @@ async function postExtractNote(req, res) {
     });
   } catch (error) {
     // Bedrock failed — do NOT delete the audio (objectKey not touched here).
-    console.error('[bedrockController] extractClinicalNote failed:', error);
+    // Log only the error name and message for server diagnostics — never the
+    // full AWS SDK error object, which may contain request IDs or internal details.
+    console.error('[bedrockController] extractClinicalNote failed:', error.name, error.message);
 
+    // Return a safe generic message.  AWS SDK error names (ValidationException,
+    // AccessDeniedException, etc.) are not forwarded to the client because they
+    // reveal information about IAM permissions and service configuration.
     const statusCode =
-      error.name === 'ValidationException'  ? 400
-      : error.name === 'AccessDeniedException' ? 403
-      : error.name === 'ThrottlingException'  ? 429
-      : 500;
+      error.name === 'ThrottlingException' ? 429 : 500;
 
     return res.status(statusCode).json({
       success: false,
-      message: error.message || 'Failed to extract clinical note from transcript.',
-      errorCode: error.name || 'InternalError',
+      message: statusCode === 429
+        ? 'Note extraction service is busy. Please try again in a moment.'
+        : 'Failed to extract clinical note from transcript.',
     });
   }
 }
