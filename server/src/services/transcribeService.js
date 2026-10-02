@@ -154,10 +154,12 @@ const {
         const transcript = transcriptData?.results?.transcripts?.[0]?.transcript ?? null;
 
         if (transcript === null || transcript === '') {
-          // Log the full raw response so the shape is visible when the path resolves empty.
+          // Log a safe diagnostic summary — never the full raw response, which
+          // contains the TranscriptFileUri (a pre-signed S3 URL) and job metadata.
+          const topLevelKeys = transcriptData ? Object.keys(transcriptData).join(', ') : 'none';
           console.warn(
-            '[transcribeService] transcript string is empty or missing. Raw transcript data:',
-            JSON.stringify(transcriptData, null, 2)
+            `[transcribeService] transcript string is empty or missing. ` +
+            `Job: ${jobName} | top-level response keys: ${topLevelKeys}`
           );
         }
 
