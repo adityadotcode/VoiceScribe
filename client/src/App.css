@@ -377,7 +377,7 @@
 }
 
 .recorder-state.is-recording {
-  background: #fef2f2; border-color: #fecaca; color: var(--red);
+  background: var(--red-bg); border-color: var(--red-border); color: var(--red);
 }
 .recorder-state.is-recording::before {
   background: var(--red);
@@ -443,7 +443,7 @@
 }
 
 .recorder-button.secondary:hover:not(:disabled) {
-  background: #f1f5f9;
+  background: var(--surface-hover);
   border-color: var(--border-mid);
 }
 
@@ -896,7 +896,7 @@
 }
 
 .db-card:hover {
-  border-color: #bfdbfe;
+  border-color: var(--brand-border);
   box-shadow: var(--shadow-md);
 }
 
@@ -1083,7 +1083,7 @@
 
 .db-empty-action:hover {
   background: var(--brand-light);
-  border-color: #bfdbfe;
+  border-color: var(--brand-border);
 }
 
 /* ============================================================
@@ -1114,9 +1114,9 @@
 }
 
 .cnr-demo-banner {
-  background: #f0f9ff;
-  border: 1px solid #bae6fd;
-  color: #0369a1;
+  background: var(--brand-light);
+  border: 1px solid var(--brand-border);
+  color: var(--brand-dark);
   font-weight: 500;
 }
 
@@ -1441,7 +1441,7 @@
 }
 
 .cnr-btn-secondary:hover:not(:disabled) {
-  background: #f1f5f9;
+  background: var(--surface-hover);
   border-color: var(--border-mid);
 }
 
@@ -1523,9 +1523,9 @@
   font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: #0369a1;
-  background: #e0f2fe;
-  border: 1px solid #bae6fd;
+  color: var(--brand-dark);
+  background: var(--brand-light);
+  border: 1px solid var(--brand-border);
   padding: 2px 7px;
   border-radius: 999px;
 }
@@ -1544,7 +1544,7 @@
 
 .cnr-summary-chip--ok     { background: var(--green-bg); border: 1px solid var(--green-border); color: var(--green); }
 .cnr-summary-chip--warn   { background: var(--amber-bg); border: 1px solid var(--amber-border); color: var(--amber); }
-.cnr-summary-chip--review { background: #fef3c7; border: 1px solid #fde68a; color: #92400e; }
+.cnr-summary-chip--review { background: var(--amber-bg); border: 1px solid var(--amber-border); color: var(--amber); }
 
 /* ============================================================
    APPROVAL CHECKLIST
@@ -1752,7 +1752,7 @@
   font-size: 11px;
   font-weight: 600;
   background: var(--brand-light);
-  border: 1px solid #bfdbfe;
+  border: 1px solid var(--brand-border);
   color: var(--brand-dark);
   white-space: nowrap;
 }
@@ -2586,7 +2586,7 @@
 }
 
 .pt-item:hover {
-  border-color: #bfdbfe;
+  border-color: var(--brand-border);
   box-shadow: var(--shadow-md);
 }
 
@@ -2788,7 +2788,7 @@
   transition: background 0.12s;
 }
 
-.pt-cancel-btn:hover:not(:disabled) { background: #f1f5f9; }
+.pt-cancel-btn:hover:not(:disabled) { background: var(--surface-hover); }
 .pt-cancel-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .pt-submit-btn {
@@ -3007,7 +3007,7 @@
 }
 
 .ph-item:hover {
-  border-color: #bfdbfe;
+  border-color: var(--brand-border);
   box-shadow: 0 1px 6px rgba(37, 99, 235, 0.08);
 }
 
@@ -3283,7 +3283,7 @@
 /* ── Selected patient ── */
 .nc-selected-patient {
   background: var(--brand-light);
-  border: 1px solid #bfdbfe;
+  border: 1px solid var(--brand-border);
   border-radius: var(--radius-md);
   padding: 14px 16px;
 }
@@ -3480,7 +3480,7 @@
   gap: 8px;
   padding: 9px 14px;
   background: var(--brand-light);
-  border: 1px solid #bfdbfe;
+  border: 1px solid var(--brand-border);
   border-radius: var(--radius-md);
   margin-bottom: 10px;
   font-size: 13px;
@@ -3687,7 +3687,7 @@
   align-items: center;
   gap: 6px;
   background: var(--brand-light);
-  border: 1px solid #bfdbfe;
+  border: 1px solid var(--brand-border);
   border-radius: var(--radius-md);
   padding: 4px 12px;
   font-size: 12px;
@@ -3808,7 +3808,7 @@
 }
 .ph-open-btn--active:hover {
   background: var(--brand-light);
-  border-color: #bfdbfe;
+  border-color: var(--brand-border);
 }
 
 /* ============================================================
@@ -3850,7 +3850,7 @@
 }
 .cs-trigger-btn:hover {
   background: var(--brand-light);
-  border-color: #bfdbfe;
+  border-color: var(--brand-border);
 }
 
 /* ── Panel header (when result shown) ── */
@@ -4013,7 +4013,7 @@
 }
 .cs-narrative-btn:hover {
   background: var(--brand-light);
-  border-color: #bfdbfe;
+  border-color: var(--brand-border);
   color: var(--brand);
 }
 
@@ -4094,3 +4094,60 @@
   font-style: italic;
   margin: 0;
 }
+
+/* ============================================================
+   Theme toggle button (TopBar)
+   ============================================================ */
+
+.app-theme-toggle {
+  appearance: none;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface-2);
+  color: var(--text);
+  font: inherit;
+  font-size: 15px;
+  width: 34px;
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 0.15s, border-color 0.15s;
+  padding: 0;
+  line-height: 1;
+}
+
+.app-theme-toggle:hover {
+  background: var(--surface-hover);
+  border-color: var(--border-mid);
+}
+
+/* ============================================================
+   Dark-mode overrides for the few remaining hardcoded surfaces
+   ============================================================ */
+
+/* Auth page card — ensure it picks up surface token (it already uses var
+   but the body/page bg needs to apply) */
+[data-theme="dark"] body {
+  background: var(--bg);
+  color: var(--text);
+}
+
+/* Native <select> elements: make the dropdown arrow readable on dark bg */
+[data-theme="dark"] select {
+  background-color: var(--surface);
+  color: var(--text-h);
+}
+
+/* Native <input> / <textarea>: ensure placeholder is visible */
+[data-theme="dark"] input::placeholder,
+[data-theme="dark"] textarea::placeholder {
+  color: var(--text-sub);
+  opacity: 1;
+}
+
+/* audio player — browsers render this element natively;
+   color-scheme on :root already signals dark, which triggers the
+   browser's native dark audio controls */

@@ -1,5 +1,5 @@
 /* ============================================================
-   Design tokens
+   Design tokens — Light theme (default)
    ============================================================ */
 :root {
   /* Brand */
@@ -8,16 +8,18 @@
   --brand-hover:  #1e40af;
   --brand-light:  #eff6ff;
   --brand-ring:   rgba(37, 99, 235, 0.18);
+  --brand-border: #bfdbfe;   /* light blue borders on brand-adjacent elements */
 
   /* Neutrals */
-  --text-h:     #0f172a;
-  --text:       #475569;
-  --text-sub:   #94a3b8;
-  --border:     #e2e8f0;
-  --border-mid: #cbd5e1;
-  --bg:         #f1f5f9;
-  --surface:    #ffffff;
-  --surface-2:  #f8fafc;
+  --text-h:       #0f172a;
+  --text:         #475569;
+  --text-sub:     #94a3b8;
+  --border:       #e2e8f0;
+  --border-mid:   #cbd5e1;
+  --bg:           #f1f5f9;
+  --surface:      #ffffff;
+  --surface-2:    #f8fafc;
+  --surface-hover: #f1f5f9; /* hover backgrounds on secondary buttons/items */
 
   /* Status */
   --green:        #15803d;
@@ -54,6 +56,65 @@
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
+
+  /* Subtle theme transition — only colour/background properties.
+     Does NOT animate layout, transform, or opacity to avoid jank. */
+  color-scheme: light;
+}
+
+/* ============================================================
+   Design tokens — Dark theme
+   Applied when <html data-theme="dark">
+   ============================================================ */
+[data-theme="dark"] {
+  color-scheme: dark;
+
+  /* Brand — keep the same hue, adjust lightness for dark surfaces */
+  --brand:        #60a5fa;   /* blue-400 — readable on dark bg */
+  --brand-dark:   #93c5fd;   /* blue-300 — lighter for hover */
+  --brand-hover:  #93c5fd;
+  --brand-light:  #1e3a5f;   /* dark blue tint for brand-bg areas */
+  --brand-ring:   rgba(96, 165, 250, 0.25);
+  --brand-border: #1e40af;   /* muted blue border in dark context */
+
+  /* Neutrals — dark surface palette */
+  --text-h:       #f1f5f9;   /* slate-100 */
+  --text:         #cbd5e1;   /* slate-300 */
+  --text-sub:     #64748b;   /* slate-500 */
+  --border:       #334155;   /* slate-700 */
+  --border-mid:   #475569;   /* slate-600 */
+  --bg:           #0f172a;   /* slate-900 */
+  --surface:      #1e293b;   /* slate-800 */
+  --surface-2:    #162032;   /* between 900 and 800 */
+  --surface-hover: #2d3f55;  /* slightly lighter than surface for hover */
+
+  /* Status — shift to accessible dark-background versions */
+  --green:        #4ade80;   /* green-400 */
+  --green-mid:    #22c55e;   /* green-500 */
+  --green-bg:     #052e16;   /* green-950 */
+  --green-border: #166534;   /* green-800 */
+  --amber:        #fbbf24;   /* amber-400 */
+  --amber-mid:    #f59e0b;   /* amber-500 */
+  --amber-bg:     #1c0f00;   /* near-black amber tint */
+  --amber-border: #92400e;   /* amber-800 */
+  --red:          #f87171;   /* red-400 */
+  --red-bg:       #1f0707;   /* near-black red tint */
+  --red-border:   #991b1b;   /* red-800 */
+
+  /* Shadow — darker so they don't bleach out on dark surfaces */
+  --shadow-sm:  0 1px 3px rgba(0,0,0,0.40), 0 1px 2px rgba(0,0,0,0.30);
+  --shadow-md:  0 4px 12px rgba(0,0,0,0.50), 0 2px 4px rgba(0,0,0,0.30);
+  --shadow-lg:  0 8px 24px rgba(0,0,0,0.60), 0 2px 6px rgba(0,0,0,0.40);
+
+  /* Radius and typography tokens are identical — no overrides needed */
+}
+
+/* ── Colour transition applied to the document root.
+   Only animates colour-related properties; skips transform/layout. ── */
+html {
+  transition:
+    background-color 0.2s ease,
+    color 0.2s ease;
 }
 
 /* ── Reset ── */

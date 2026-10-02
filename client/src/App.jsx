@@ -4,6 +4,7 @@ import AudioRecorder from './AudioRecorder.jsx'
 import ClinicalNoteReview from './ClinicalNoteReview.jsx'
 import Dashboard from './Dashboard.jsx'
 import { AuthProvider, useAuth } from './contexts/AuthContext.jsx'
+import { useTheme } from './contexts/ThemeContext.jsx'
 import PrivateRoute from './components/layout/PrivateRoute.jsx'
 import LoginPage from './pages/LoginPage.jsx'
 import RegisterPage from './pages/RegisterPage.jsx'
@@ -69,6 +70,7 @@ const PIPELINE_STEPS = [
 function TopBar({ apiStatus }) {
   const { user, logout } = useAuth()
   const navigate         = useNavigate()
+  const { theme, toggleTheme } = useTheme()
 
   async function handleLogout() {
     await logout()
@@ -88,6 +90,15 @@ function TopBar({ apiStatus }) {
         <Link to="/patients"          className="app-nav-link">Patients</Link>
       </nav>
       <div className="app-topbar-right">
+        <button
+          type="button"
+          className="app-theme-toggle"
+          onClick={toggleTheme}
+          aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+          title={theme === 'dark' ? 'Light mode' : 'Dark mode'}
+        >
+          {theme === 'dark' ? '☀️' : '🌙'}
+        </button>
         {apiStatus && (
           <>
             <span className="app-api-dot" title={apiStatus} aria-label={`API status: ${apiStatus}`} />
