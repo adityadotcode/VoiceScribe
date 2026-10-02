@@ -250,8 +250,6 @@ async function updatePatient(req, res) {
   }
 }
 
-module.exports = { createPatient, listPatients, getPatient, updatePatient, listPatientConsultations, getLastApproved, getChangeSummary };
-
 
 // ---------------------------------------------------------------------------
 // GET /api/patients/:id/consultations
@@ -505,3 +503,13 @@ async function getChangeSummary(req, res) {
     return res.status(500).json({ success: false, message: 'Failed to compute change summary.' });
   }
 }
+
+module.exports = {
+  createPatient,
+  listPatients,
+  getPatient,
+  updatePatient,
+  listPatientConsultations,
+  getLastApproved,
+  getChangeSummary,
+};

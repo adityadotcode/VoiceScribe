@@ -453,8 +453,6 @@ async function extractClinicalNote(transcript) {
   return note
 }
 
-module.exports = { extractClinicalNote, normalizeNote, recomputeMissingInformation }
-
 // ============================================================================
 // CHANGE-SUMMARY NARRATIVE  — Phase 4D.1
 // ============================================================================
