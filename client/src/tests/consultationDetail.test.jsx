@@ -36,6 +36,7 @@ vi.mock('../services/api/patients.js', () => ({
   apiGetLastApproved:         vi.fn(),
   apiListPatients:            vi.fn(),
   apiCreatePatient:           vi.fn(),
+  apiGetPatientOverview:      vi.fn(),
 }));
 
 // Defensive: prevent apiFetch bleed from other test files
@@ -51,6 +52,7 @@ import { apiGetConsultation } from '../services/api/consultations.js';
 import {
   apiGetPatient,
   apiGetPatientConsultations,
+  apiGetPatientOverview,
 } from '../services/api/patients.js';
 
 // ---------------------------------------------------------------------------
@@ -260,10 +262,13 @@ describe('5. consultation fields display', () => {
 // ---------------------------------------------------------------------------
 describe('6. Open action from Patient Profile navigates correctly', () => {
   test('clicking Open renders the consultation detail route', async () => {
-    apiGetPatient.mockResolvedValue({ success: true, patient: makePatient() });
-    apiGetPatientConsultations.mockResolvedValue({
+    // PatientProfilePage now uses the overview endpoint
+    apiGetPatientOverview.mockResolvedValue({
       success: true,
-      consultations: [makeConsultation({ status: 'draft' })],
+      patient: makePatient(),
+      statistics: { totalConsultations: 1, approvedConsultations: 1, draftConsultations: 0, lastConsultationDate: null },
+      latestApprovedConsultation: null,
+      recentConsultations: [makeConsultation({ status: 'draft' })],
     });
 
     renderPatientProfile();

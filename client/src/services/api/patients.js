@@ -81,3 +81,13 @@ export async function apiGetChangeSummary(patientId, currentConsultationId, gene
   });
   return res.json();
 }
+
+/**
+ * Get the Patient 360° overview for a specific patient.
+ * Returns { success, patient, statistics, latestApprovedConsultation, recentConsultations }.
+ * Patient 360.1 endpoint: GET /api/patients/:id/overview
+ */
+export async function apiGetPatientOverview(patientId) {
+  const res = await apiFetch(`/api/patients/${patientId}/overview`);
+  return res.json();
+}

@@ -1,10 +1,31 @@
+/**
+ * PatientProfilePage — Patient 360° view (Patient 360.2)
+ *
+ * Loads a single call to GET /api/patients/:id/overview which returns
+ * the patient record, aggregate statistics, latest effective approved
+ * consultation, and 5 most recent consultations — all in one round-trip.
+ *
+ * Layout:
+ *   ┌ Page header (← Patients | Edit patient)
+ *   ├ Archived banner (conditional)
+ *   ├ Patient header  (name, DOB, sex, MR, phone)
+ *   ├ Statistics cards (total / approved / draft / last visit)
+ *   ├ Latest approved visit (chief complaint, symptoms, meds, assessment, follow-up)
+ *   └ Recent consultations timeline (up to 5, correction-aware)
+ *
+ * Edit mode is unchanged from the original PatientProfilePage.
+ */
+
 import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
-  apiGetPatient,
+  apiGetPatientOverview,
   apiUpdatePatient,
-  apiGetPatientConsultations,
 } from '../services/api/patients.js';
+
+// ---------------------------------------------------------------------------
+// Constants / helpers
+// ---------------------------------------------------------------------------
 
 const SEX_OPTIONS = [
   { value: 'male',       label: 'Male' },
@@ -13,153 +34,162 @@ const SEX_OPTIONS = [
   { value: 'not_stated', label: 'Prefer not to state' },
 ];
 
-function formatDob(iso) {
+function sexLabel(v) {
+  return SEX_OPTIONS.find((o) => o.value === v)?.label ?? v ?? '—';
+}
+
+function fmtDate(iso) {
   if (!iso) return '—';
   return new Date(iso).toLocaleDateString(undefined, {
     year: 'numeric', month: 'long', day: 'numeric',
   });
 }
 
-function sexLabel(v) {
-  return SEX_OPTIONS.find((o) => o.value === v)?.label ?? v ?? '—';
-}
-
-/** Format a date+time for the consultation list. */
-function formatConsultationDate(iso) {
+function fmtShortDate(iso) {
   if (!iso) return '—';
   return new Date(iso).toLocaleDateString(undefined, {
     year: 'numeric', month: 'short', day: 'numeric',
   });
 }
 
-// ---------------------------------------------------------------------------
-// ConsultationHistorySection
-// ---------------------------------------------------------------------------
-// Isolated sub-component so its loading state is independent from the
-// patient-load state above it.
-function ConsultationHistorySection({ patientId }) {
-  const [consultations, setConsultations] = useState([]);
-  const [loading,       setLoading]       = useState(true);
-  const [error,         setError]         = useState('');
+function listOrDash(arr) {
+  if (!Array.isArray(arr) || arr.length === 0) return <em className="p360-none">None recorded</em>;
+  return arr.join(', ');
+}
 
-  async function load() {
-    setLoading(true);
-    setError('');
-    try {
-      const data = await apiGetPatientConsultations(patientId);
-      if (!data.success) {
-        setError(data.message || 'Could not load consultation history.');
-      } else {
-        setConsultations(data.consultations);
-      }
-    } catch {
-      setError('Network error — could not load consultation history.');
-    }
-    setLoading(false);
+// ---------------------------------------------------------------------------
+// StatCard — one of the four statistics tiles
+// ---------------------------------------------------------------------------
+function StatCard({ label, value, accent }) {
+  return (
+    <div className={`p360-stat-card p360-stat-card--${accent}`}>
+      <span className="p360-stat-value">{value ?? '—'}</span>
+      <span className="p360-stat-label">{label}</span>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// LatestVisitSection
+// ---------------------------------------------------------------------------
+function LatestVisitSection({ consultation }) {
+  if (!consultation) {
+    return (
+      <section className="p360-card" aria-label="Latest approved visit">
+        <h2 className="p360-section-title">Latest approved visit</h2>
+        <p className="p360-empty">No approved consultation available yet.</p>
+      </section>
+    );
   }
 
-  useEffect(() => { load(); }, [patientId]);
-
   return (
-    <section className="ph-section" aria-labelledby="ph-heading">
-      <div className="ph-section-header">
-        <h2 className="ph-heading" id="ph-heading">Consultation history</h2>
-        {!loading && (
-          <button
-            type="button"
-            className="ph-refresh-btn"
-            onClick={load}
-            aria-label="Refresh consultation history"
-          >
-            ↻ Refresh
-          </button>
-        )}
+    <section className="p360-card" aria-label="Latest approved visit">
+      <div className="p360-section-header">
+        <h2 className="p360-section-title">Latest approved visit</h2>
+        <span className="p360-section-date">{fmtShortDate(consultation.consultationDate)}</span>
       </div>
 
-      {/* Loading */}
-      {loading && (
-        <p className="ph-loading" aria-live="polite">Loading history…</p>
-      )}
-
-      {/* Error */}
-      {!loading && error && (
-        <div className="ph-error" role="alert">
-          {error}
-          <button type="button" className="pt-retry-btn" onClick={load}>Retry</button>
+      <dl className="p360-fields">
+        {consultation.chief_complaint && (
+          <div className="p360-field">
+            <dt>Chief complaint</dt>
+            <dd>{consultation.chief_complaint}</dd>
+          </div>
+        )}
+        <div className="p360-field">
+          <dt>Symptoms</dt>
+          <dd>{listOrDash(consultation.symptoms)}</dd>
         </div>
-      )}
-
-      {/* Empty */}
-      {!loading && !error && consultations.length === 0 && (
-        <p className="ph-empty">No consultations recorded for this patient yet.</p>
-      )}
-
-      {/* History list */}
-      {!loading && !error && consultations.length > 0 && (
-        <ul className="ph-list" role="list">
-          {consultations.map((c) => (
-            <ConsultationRow key={c._id} consultation={c} />
-          ))}
-        </ul>
-      )}
+        <div className="p360-field">
+          <dt>Medications mentioned</dt>
+          <dd>{listOrDash(consultation.medications_mentioned)}</dd>
+        </div>
+        {consultation.assessment && (
+          <div className="p360-field p360-field--wide">
+            <dt>Assessment</dt>
+            <dd>{consultation.assessment}</dd>
+          </div>
+        )}
+        {consultation.follow_up && (
+          <div className="p360-field p360-field--wide">
+            <dt>Follow-up</dt>
+            <dd>{consultation.follow_up}</dd>
+          </div>
+        )}
+      </dl>
     </section>
   );
 }
 
 // ---------------------------------------------------------------------------
-// ConsultationRow
+// TimelineSection — recent consultations (up to 5)
 // ---------------------------------------------------------------------------
-function ConsultationRow({ consultation: c }) {
-  const isSuperseded = Boolean(c.supersededBy);
-  const isCorrection = Boolean(c.correctionOf);
-
+function TimelineSection({ consultations }) {
   return (
-    <li className={`ph-item${isSuperseded ? ' ph-item--superseded' : ''}`}>
-      <div className="ph-item-main">
+    <section className="p360-card" aria-label="Recent consultations">
+      <h2 className="p360-section-title">Recent consultations</h2>
 
-        {/* Top row: date + status badge */}
-        <div className="ph-item-top">
-          <span className="ph-date">
-            {formatConsultationDate(c.consultationDate ?? c.createdAt)}
-          </span>
-          <span className={`ph-badge ph-badge--${c.status}`}>
-            {c.status}
-          </span>
-          {isCorrection && (
-            <span className="ph-badge ph-badge--correction" title="This note corrects an earlier consultation">
-              correction
-            </span>
-          )}
-          {isSuperseded && (
-            <span className="ph-badge ph-badge--superseded" title="This note has been superseded by a correction">
-              superseded
-            </span>
-          )}
-        </div>
+      {(!consultations || consultations.length === 0) && (
+        <p className="p360-empty">No consultations recorded for this patient yet.</p>
+      )}
 
-        {/* Chief complaint */}
-        <p className="ph-complaint">
-          {c.note?.chief_complaint
-            ? c.note.chief_complaint
-            : <em className="ph-no-complaint">No chief complaint recorded</em>
-          }
-        </p>
+      {consultations && consultations.length > 0 && (
+        <ul className="p360-timeline" role="list">
+          {consultations.map((c) => {
+            const isSuperseded = Boolean(c.supersededBy);
+            const isCorrection = Boolean(c.correctionOf);
+            const consultId    = c.id ?? c._id;
 
-        {/* Encounter type */}
-        {c.encounterType && (
-          <span className="ph-encounter">{c.encounterType.replace('_', ' ')}</span>
-        )}
-      </div>
+            return (
+              <li
+                key={consultId}
+                className={`p360-tl-item${isSuperseded ? ' p360-tl-item--superseded' : ''}`}
+              >
+                <div className="p360-tl-meta">
+                  <span className="p360-tl-date">
+                    {fmtShortDate(c.consultationDate)}
+                  </span>
+                  <span className={`p360-tl-badge p360-tl-badge--${c.status}`}>
+                    {c.status}
+                  </span>
+                  {isCorrection && (
+                    <span
+                      className="p360-tl-badge p360-tl-badge--correction"
+                      title="This note corrects an earlier consultation"
+                    >
+                      correction
+                    </span>
+                  )}
+                  {isSuperseded && (
+                    <span
+                      className="p360-tl-badge p360-tl-badge--superseded"
+                      title="This note has been superseded by a correction"
+                    >
+                      superseded
+                    </span>
+                  )}
+                </div>
 
-      {/* Open action — navigates to /consultation/:id */}
-      <Link
-        to={`/consultation/${c._id}`}
-        className="ph-open-btn ph-open-btn--active"
-        aria-label={`Open consultation from ${formatConsultationDate(c.consultationDate ?? c.createdAt)}`}
-      >
-        Open
-      </Link>
-    </li>
+                <p className="p360-tl-complaint">
+                  {c.chief_complaint
+                    ? c.chief_complaint
+                    : <em className="p360-none">No chief complaint recorded</em>
+                  }
+                </p>
+
+                <Link
+                  to={`/consultation/${consultId}`}
+                  className="p360-tl-open"
+                  aria-label={`Open consultation from ${fmtShortDate(c.consultationDate)}`}
+                >
+                  Open
+                </Link>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </section>
   );
 }
 
@@ -170,45 +200,50 @@ export default function PatientProfilePage() {
   const { id }   = useParams();
   const navigate = useNavigate();
 
-  const [patient,     setPatient]     = useState(null);
-  const [loading,     setLoading]     = useState(true);
-  const [error,       setError]       = useState('');
+  // ── Overview state ──────────────────────────────────────────────────────
+  const [overview,  setOverview]  = useState(null);  // full API response
+  const [loading,   setLoading]   = useState(true);
+  const [error,     setError]     = useState('');
+
+  // ── Edit state (unchanged from Phase 3B) ───────────────────────────────
   const [editing,     setEditing]     = useState(false);
   const [editFields,  setEditFields]  = useState({});
   const [fieldErrors, setFieldErrors] = useState({});
   const [saveError,   setSaveError]   = useState('');
   const [saving,      setSaving]      = useState(false);
 
-  async function loadPatient() {
+  async function loadOverview() {
     setLoading(true);
     setError('');
     try {
-      const data = await apiGetPatient(id);
+      const data = await apiGetPatientOverview(id);
       if (!data.success) {
-        setError(data.message || 'Could not load patient.');
+        setError(data.message || 'Could not load patient overview.');
       } else {
-        setPatient(data.patient);
+        setOverview(data);
       }
     } catch {
-      setError('Network error — could not load patient.');
+      setError('Network error — could not load patient overview.');
     }
     setLoading(false);
   }
 
-  useEffect(() => { loadPatient(); }, [id]);
+  useEffect(() => { loadOverview(); }, [id]);
 
+  // ── Edit helpers (unchanged) ────────────────────────────────────────────
   function startEditing() {
+    const p = overview.patient;
     setEditFields({
-      firstName:       patient.firstName ?? '',
-      lastName:        patient.lastName ?? '',
-      dateOfBirth:     patient.dateOfBirth
-        ? new Date(patient.dateOfBirth).toISOString().split('T')[0]
+      firstName:       p.firstName ?? '',
+      lastName:        p.lastName ?? '',
+      dateOfBirth:     p.dateOfBirth
+        ? new Date(p.dateOfBirth).toISOString().split('T')[0]
         : '',
-      biologicalSex:   patient.biologicalSex ?? '',
-      phone:           patient.phone ?? '',
-      medicalRecordId: patient.medicalRecordId ?? '',
-      notes:           patient.notes ?? '',
-      isArchived:      patient.isArchived ?? false,
+      biologicalSex:   p.biologicalSex ?? '',
+      phone:           p.phone ?? '',
+      medicalRecordId: p.medicalRecordId ?? '',
+      notes:           p.notes ?? '',
+      isArchived:      p.isArchived ?? false,
     });
     setFieldErrors({});
     setSaveError('');
@@ -234,11 +269,9 @@ export default function PatientProfilePage() {
   async function handleSave(e) {
     e.preventDefault();
     if (saving) return;
-
     const errs = validateEdit();
     setFieldErrors(errs);
     if (Object.keys(errs).length > 0) return;
-
     setSaving(true);
     setSaveError('');
 
@@ -254,17 +287,16 @@ export default function PatientProfilePage() {
     });
 
     setSaving(false);
-
     if (!data.success) {
       setSaveError(data.message || 'Save failed. Please try again.');
       return;
     }
-
-    setPatient(data.patient);
+    // Refresh overview so header reflects the updated patient
+    await loadOverview();
     setEditing(false);
   }
 
-  // ── Loading / error states ─────────────────────────────────────────────
+  // ── Loading ──────────────────────────────────────────────────────────────
   if (loading) {
     return (
       <div className="pt-page">
@@ -273,7 +305,8 @@ export default function PatientProfilePage() {
     );
   }
 
-  if (error || !patient) {
+  // ── Error / not found ────────────────────────────────────────────────────
+  if (error || !overview) {
     return (
       <div className="pt-page">
         <div className="pt-page-header">
@@ -283,11 +316,13 @@ export default function PatientProfilePage() {
         </div>
         <div className="pt-error" role="alert">
           {error || 'Patient not found.'}
-          <button type="button" className="pt-retry-btn" onClick={loadPatient}>Retry</button>
+          <button type="button" className="pt-retry-btn" onClick={loadOverview}>Retry</button>
         </div>
       </div>
     );
   }
+
+  const { patient, statistics, latestApprovedConsultation, recentConsultations } = overview;
 
   // ── Edit mode ─────────────────────────────────────────────────────────────
   if (editing) {
@@ -383,9 +418,11 @@ export default function PatientProfilePage() {
     );
   }
 
-  // ── View mode ─────────────────────────────────────────────────────────────
+  // ── Patient 360 view ──────────────────────────────────────────────────────
   return (
-    <div className="pt-page">
+    <div className="pt-page p360-page">
+
+      {/* Page header */}
       <div className="pt-page-header">
         <button type="button" className="pt-back-btn" onClick={() => navigate('/patients')}>
           ← Patients
@@ -395,47 +432,77 @@ export default function PatientProfilePage() {
         </button>
       </div>
 
+      {/* Archived banner */}
       {patient.isArchived && (
         <div className="pt-archived-banner" role="status">
           This patient record is archived.
         </div>
       )}
 
-      <div className="pt-profile-card">
-        <h1 className="pt-profile-name">{patient.firstName} {patient.lastName}</h1>
-
-        <dl className="pt-detail-grid">
-          <div className="pt-detail-row">
-            <dt className="pt-detail-label">Date of birth</dt>
-            <dd className="pt-detail-value">{formatDob(patient.dateOfBirth)}</dd>
-          </div>
-          <div className="pt-detail-row">
-            <dt className="pt-detail-label">Biological sex</dt>
-            <dd className="pt-detail-value">{sexLabel(patient.biologicalSex)}</dd>
-          </div>
+      {/* Patient header */}
+      <div className="p360-header-card">
+        <div className="p360-name-row">
+          <h1 className="p360-name">{patient.firstName} {patient.lastName}</h1>
           {patient.medicalRecordId && (
-            <div className="pt-detail-row">
-              <dt className="pt-detail-label">Medical record ID</dt>
-              <dd className="pt-detail-value">{patient.medicalRecordId}</dd>
-            </div>
+            <span className="p360-mrid">MR: {patient.medicalRecordId}</span>
           )}
+        </div>
+        <dl className="p360-header-meta">
+          <div className="p360-header-field">
+            <dt>Date of birth</dt>
+            <dd>{fmtDate(patient.dateOfBirth)}</dd>
+          </div>
+          <div className="p360-header-field">
+            <dt>Biological sex</dt>
+            <dd>{sexLabel(patient.biologicalSex)}</dd>
+          </div>
           {patient.phone && (
-            <div className="pt-detail-row">
-              <dt className="pt-detail-label">Phone</dt>
-              <dd className="pt-detail-value">{patient.phone}</dd>
+            <div className="p360-header-field">
+              <dt>Phone</dt>
+              <dd>{patient.phone}</dd>
             </div>
           )}
           {patient.notes && (
-            <div className="pt-detail-row pt-detail-row--wide">
-              <dt className="pt-detail-label">Notes</dt>
-              <dd className="pt-detail-value pt-detail-notes">{patient.notes}</dd>
+            <div className="p360-header-field p360-header-field--wide">
+              <dt>Notes</dt>
+              <dd className="p360-notes-text">{patient.notes}</dd>
             </div>
           )}
         </dl>
       </div>
 
-      {/* Consultation history — Phase 3B.1 */}
-      <ConsultationHistorySection patientId={id} />
+      {/* Statistics */}
+      <section className="p360-stats-row" aria-label="Consultation statistics">
+        <StatCard
+          label="Total consultations"
+          value={statistics.totalConsultations}
+          accent="neutral"
+        />
+        <StatCard
+          label="Approved"
+          value={statistics.approvedConsultations}
+          accent="approved"
+        />
+        <StatCard
+          label="Draft"
+          value={statistics.draftConsultations}
+          accent="draft"
+        />
+        <StatCard
+          label="Last visit"
+          value={statistics.lastConsultationDate
+            ? fmtShortDate(statistics.lastConsultationDate)
+            : '—'}
+          accent="date"
+        />
+      </section>
+
+      {/* Latest approved visit */}
+      <LatestVisitSection consultation={latestApprovedConsultation} />
+
+      {/* Recent consultations timeline */}
+      <TimelineSection consultations={recentConsultations} />
+
     </div>
   );
 }

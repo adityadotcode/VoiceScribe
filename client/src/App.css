@@ -4151,3 +4151,333 @@
 /* audio player — browsers render this element natively;
    color-scheme on :root already signals dark, which triggers the
    browser's native dark audio controls */
+
+/* ============================================================
+   Patient 360.2 — Patient 360° page sections
+   Prefix: p360-
+   ============================================================ */
+
+.p360-page {
+  max-width: 900px;
+}
+
+/* ── Shared card ── */
+.p360-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 20px 24px;
+  margin-bottom: 16px;
+}
+
+/* ── Patient header card ── */
+.p360-header-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 20px 24px;
+  margin-bottom: 16px;
+}
+
+.p360-name-row {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.p360-name {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--text-h);
+  margin: 0;
+}
+
+.p360-mrid {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-sub);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 2px 10px;
+}
+
+.p360-header-meta {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 10px;
+  margin: 0;
+}
+
+.p360-header-field {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.p360-header-field--wide { grid-column: 1 / -1; }
+
+.p360-header-field dt {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--text-sub);
+}
+
+.p360-header-field dd {
+  font-size: 13px;
+  color: var(--text-h);
+  margin: 0;
+}
+
+.p360-notes-text {
+  white-space: pre-wrap;
+  line-height: 1.5;
+}
+
+/* ── Statistics row ── */
+.p360-stats-row {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+@media (max-width: 680px) {
+  .p360-stats-row { grid-template-columns: repeat(2, 1fr); }
+}
+
+@media (max-width: 400px) {
+  .p360-stats-row { grid-template-columns: 1fr; }
+}
+
+.p360-stat-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.p360-stat-card--approved { border-left: 3px solid var(--green-mid); }
+.p360-stat-card--draft    { border-left: 3px solid var(--amber-mid); }
+.p360-stat-card--date     { border-left: 3px solid var(--brand); }
+.p360-stat-card--neutral  { border-left: 3px solid var(--border-mid); }
+
+.p360-stat-value {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--text-h);
+  line-height: 1.2;
+}
+
+.p360-stat-label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-sub);
+}
+
+/* ── Latest visit / field list ── */
+.p360-section-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.p360-section-title {
+  font-size: 14px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-h);
+  margin: 0 0 14px;
+}
+
+/* When inside section-header, no bottom margin */
+.p360-section-header .p360-section-title { margin: 0; }
+
+.p360-section-date {
+  font-size: 12px;
+  color: var(--text-sub);
+}
+
+.p360-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0;
+}
+
+.p360-field {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.p360-field--wide { /* spans full width — no grid here, so no-op but for future */ }
+
+.p360-field dt {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--text-sub);
+}
+
+.p360-field dd {
+  font-size: 13px;
+  color: var(--text-h);
+  margin: 0;
+  line-height: 1.5;
+}
+
+.p360-none {
+  font-style: italic;
+  color: var(--text-sub);
+  font-weight: 400;
+}
+
+.p360-empty {
+  font-size: 13px;
+  color: var(--text-sub);
+  font-style: italic;
+  margin: 0;
+  text-align: center;
+  padding: 20px 0;
+}
+
+/* ── Timeline ── */
+.p360-timeline {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.p360-tl-item {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  transition: border-color 0.12s, box-shadow 0.12s;
+}
+
+.p360-tl-item:hover {
+  border-color: var(--brand-border);
+  box-shadow: 0 1px 6px rgba(37, 99, 235, 0.08);
+}
+
+.p360-tl-item--superseded {
+  opacity: 0.55;
+}
+
+.p360-tl-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+  flex: 1;
+}
+
+.p360-tl-date {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-sub);
+  white-space: nowrap;
+}
+
+.p360-tl-complaint {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-h);
+  margin: 0;
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ── Timeline badges ── */
+.p360-tl-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: lowercase;
+}
+
+.p360-tl-badge--draft {
+  background: var(--surface-2);
+  color: var(--text-sub);
+  border: 1px solid var(--border);
+}
+
+.p360-tl-badge--approved {
+  background: var(--green-bg);
+  color: var(--green);
+  border: 1px solid var(--green-border);
+}
+
+.p360-tl-badge--correction {
+  background: var(--amber-bg);
+  color: var(--amber);
+  border: 1px solid var(--amber-border);
+}
+
+.p360-tl-badge--superseded {
+  background: var(--surface-2);
+  color: var(--text-sub);
+  border: 1px solid var(--border);
+  text-decoration: line-through;
+}
+
+/* ── Open link ── */
+.p360-tl-open {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  text-decoration: none;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  color: var(--brand);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 5px 13px;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s;
+}
+
+.p360-tl-open:hover {
+  background: var(--brand-light);
+  border-color: var(--brand-border);
+}
+
+@media (max-width: 600px) {
+  .p360-header-meta    { grid-template-columns: 1fr; }
+  .p360-tl-item        { flex-wrap: wrap; }
+  .p360-tl-complaint   { order: 3; flex-basis: 100%; }
+  .p360-tl-open        { margin-left: auto; }
+  .p360-card,
+  .p360-header-card    { padding: 14px 16px; }
+}
