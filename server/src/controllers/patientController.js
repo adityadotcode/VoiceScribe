@@ -512,4 +512,151 @@ module.exports = {
   listPatientConsultations,
   getLastApproved,
   getChangeSummary,
+  getPatientOverview,
 };
+
+// ---------------------------------------------------------------------------
+// GET /api/patients/:id/overview  — Patient 360.1
+// ---------------------------------------------------------------------------
+// Returns a compact 360° overview for a single patient:
+//   - Full patient record
+//   - Aggregate statistics (total, approved, draft consultations;
+//     last consultation date)
+//   - Latest effective approved consultation (correction-aware)
+//   - 5 most recent consultations (summary fields only)
+//
+// Consultation counting rules:
+//   - Only consultations owned by req.user.id AND linked to this patient.
+//   - Corrections (correctionOf !== null) are NOT counted as separate clinical
+//     encounters in totalConsultations / approvedConsultations / draftConsultations.
+//     They may still appear in recentConsultations for audit visibility.
+//
+// Latest effective approved consultation:
+//   Same semantics as getLastApproved: status='approved', supersededBy=null,
+//   correctionOf=null, sorted by consultationDate descending.
+//
+// Authorization: patient must belong to req.user.id; returns 404 otherwise.
+async function getPatientOverview(req, res) {
+  if (!validateObjectId(req.params.id, res)) return;
+
+  const userId    = req.user.id;
+  const patientId = req.params.id;
+
+  try {
+    // ── 1. Verify patient ownership ──────────────────────────────────────
+    const patient = await Patient.findOne({ _id: patientId, userId }).lean();
+
+    if (!patient) {
+      return res.status(404).json({ success: false, message: 'Patient not found.' });
+    }
+
+    // ── 2. Aggregate statistics — clinical encounters only (correctionOf=null)
+    // We count only original encounter documents, not correction amendments.
+    // A single aggregation pipeline is more efficient than three separate
+    // countDocuments calls.
+    const statsPipeline = await Consultation.aggregate([
+      {
+        $match: {
+          patientId: patient._id,
+          userId:    mongoose.Types.ObjectId.createFromHexString
+            ? mongoose.Types.ObjectId.createFromHexString(userId)
+            : new mongoose.Types.ObjectId(userId),
+          correctionOf: null,   // exclude correction documents
+        },
+      },
+      {
+        $group: {
+          _id:                  null,
+          totalConsultations:   { $sum: 1 },
+          approvedConsultations: {
+            $sum: { $cond: [{ $eq: ['$status', 'approved'] }, 1, 0] },
+          },
+          draftConsultations: {
+            $sum: { $cond: [{ $eq: ['$status', 'draft'] }, 1, 0] },
+          },
+          lastConsultationDate: { $max: '$consultationDate' },
+        },
+      },
+    ]);
+
+    const stats = statsPipeline[0] ?? {
+      totalConsultations:    0,
+      approvedConsultations: 0,
+      draftConsultations:    0,
+      lastConsultationDate:  null,
+    };
+
+    // ── 3. Latest effective approved consultation ────────────────────────
+    // Reuses the same correction-aware semantics as getLastApproved:
+    //   status='approved', supersededBy=null, correctionOf=null,
+    //   sorted by consultationDate descending → first = current effective note.
+    const latestApprovedDoc = await Consultation.findOne({
+      patientId: patient._id,
+      userId:    userId,
+      status:       'approved',
+      supersededBy: null,
+      correctionOf: null,
+    })
+      .sort({ consultationDate: -1 })
+      .select('_id consultationDate note approvedAt')
+      .lean();
+
+    const latestApproved = latestApprovedDoc
+      ? {
+          id:                   latestApprovedDoc._id,
+          consultationDate:     latestApprovedDoc.consultationDate,
+          chief_complaint:      latestApprovedDoc.note?.chief_complaint  ?? null,
+          symptoms:             latestApprovedDoc.note?.symptoms          ?? [],
+          medications_mentioned: latestApprovedDoc.note?.medications_mentioned ?? [],
+          assessment:           latestApprovedDoc.note?.assessment        ?? null,
+          follow_up:            latestApprovedDoc.note?.follow_up         ?? null,
+        }
+      : null;
+
+    // ── 4. Recent consultations — last 5, summary fields only ───────────
+    // All consultations (including corrections) are shown here so the doctor
+    // has a complete chronological view. Correction status is indicated via
+    // the correctionOf / supersededBy fields.
+    const recentDocs = await Consultation.find({ patientId: patient._id, userId })
+      .sort({ consultationDate: -1, createdAt: -1 })
+      .limit(5)
+      .select('_id consultationDate status note.chief_complaint correctionOf supersededBy createdAt')
+      .lean();
+
+    const recentConsultations = recentDocs.map((c) => ({
+      id:               c._id,
+      consultationDate: c.consultationDate ?? c.createdAt,
+      status:           c.status,
+      chief_complaint:  c.note?.chief_complaint ?? null,
+      correctionOf:     c.correctionOf  ?? null,
+      supersededBy:     c.supersededBy  ?? null,
+    }));
+
+    // ── 5. Build and return response ─────────────────────────────────────
+    return res.json({
+      success: true,
+      patient: {
+        id:              patient._id,
+        firstName:       patient.firstName,
+        lastName:        patient.lastName,
+        dateOfBirth:     patient.dateOfBirth,
+        biologicalSex:   patient.biologicalSex,
+        phone:           patient.phone           ?? '',
+        medicalRecordId: patient.medicalRecordId ?? '',
+        notes:           patient.notes           ?? '',
+        isArchived:      patient.isArchived,
+      },
+      statistics: {
+        totalConsultations:    stats.totalConsultations,
+        approvedConsultations: stats.approvedConsultations,
+        draftConsultations:    stats.draftConsultations,
+        lastConsultationDate:  stats.lastConsultationDate ?? null,
+      },
+      latestApprovedConsultation: latestApproved,
+      recentConsultations,
+    });
+  } catch (err) {
+    console.error('[patientController] getPatientOverview error:', err.message);
+    return res.status(500).json({ success: false, message: 'Failed to fetch patient overview.' });
+  }
+}

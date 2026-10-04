@@ -7,6 +7,7 @@ const {
   listPatientConsultations,
   getLastApproved,
   getChangeSummary,
+  getPatientOverview,
 } = require('../controllers/patientController');
 
 const router = express.Router();
@@ -24,5 +25,8 @@ router.get('/:id/last-approved', getLastApproved);
 
 // Phase 4B — deterministic change summary
 router.post('/:id/change-summary', getChangeSummary);
+
+// Patient 360.1 — compact overview
+router.get('/:id/overview', getPatientOverview);
 
 module.exports = router;
