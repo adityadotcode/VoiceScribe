@@ -323,7 +323,8 @@ async function getLastApproved(req, res) {
       userId,
       status:       'approved',
       supersededBy: null,
-      correctionOf: null,
+      // NOTE: correctionOf intentionally omitted — an approved correction IS
+      // the effective version of a consultation and must be surfaced here.
     })
       .sort({ consultationDate: -1 })
       // Return the full note context fields used for pre-filling a new encounter.
@@ -426,7 +427,8 @@ async function getChangeSummary(req, res) {
       userId,
       status:           'approved',
       supersededBy:     null,
-      correctionOf:     null,
+      // NOTE: correctionOf intentionally omitted — an approved correction IS
+      // the effective version of a consultation and is a valid comparison base.
       // Strictly earlier than the current consultation's encounter date.
       consultationDate: { $lt: currentDate },
     })
@@ -587,15 +589,14 @@ async function getPatientOverview(req, res) {
     };
 
     // ── 3. Latest effective approved consultation ────────────────────────
-    // Reuses the same correction-aware semantics as getLastApproved:
-    //   status='approved', supersededBy=null, correctionOf=null,
-    //   sorted by consultationDate descending → first = current effective note.
+    // Correction-aware: supersededBy=null ensures we get the current effective
+    // version. correctionOf is intentionally NOT filtered — an approved
+    // correction IS the effective note and must be surfaced here.
     const latestApprovedDoc = await Consultation.findOne({
       patientId: patient._id,
       userId:    userId,
       status:       'approved',
       supersededBy: null,
-      correctionOf: null,
     })
       .sort({ consultationDate: -1 })
       .select('_id consultationDate note approvedAt')
