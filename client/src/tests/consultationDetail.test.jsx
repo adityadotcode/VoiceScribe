@@ -324,3 +324,188 @@ describe('7. correction and superseded indicators', () => {
     });
   });
 });
+
+// ---------------------------------------------------------------------------
+// Phase 5C — Correction UI tests
+// ---------------------------------------------------------------------------
+
+import userEvent from '@testing-library/user-event';
+
+const NEW_CORRECTION_ID = 'ffffffffffffffffffffffff';
+
+// Helper: render and wait for an approved, non-superseded consultation
+async function renderApprovedAndWait() {
+  apiGetConsultation.mockResolvedValue({ success: true, consultation: makeConsultation() });
+  renderDetailPage();
+  await waitFor(() => expect(screen.getByText('Persistent cough')).toBeInTheDocument());
+}
+
+// ---------------------------------------------------------------------------
+// 8 — Correction action visibility
+// ---------------------------------------------------------------------------
+describe('8. correction action visibility', () => {
+  test('8a. "Correct consultation" button appears for approved non-superseded consultation', async () => {
+    await renderApprovedAndWait();
+    expect(screen.getByRole('button', { name: /correct (this )?consultation/i })).toBeInTheDocument();
+  });
+
+  test('8b. "Correct consultation" button absent for draft consultation', async () => {
+    apiGetConsultation.mockResolvedValue({
+      success: true,
+      consultation: makeConsultation({ status: 'draft', approvedAt: null }),
+    });
+    renderDetailPage();
+    await waitFor(() => expect(screen.getByText('Persistent cough')).toBeInTheDocument());
+
+    expect(screen.queryByRole('button', { name: /correct (this )?consultation/i })).not.toBeInTheDocument();
+  });
+
+  test('8c. "Correct consultation" button absent when already superseded', async () => {
+    apiGetConsultation.mockResolvedValue({
+      success: true,
+      consultation: makeConsultation({ supersededBy: 'dddddddddddddddddddddddd' }),
+    });
+    renderDetailPage();
+    await waitFor(() => expect(screen.getByText('Persistent cough')).toBeInTheDocument());
+
+    expect(screen.queryByRole('button', { name: /correct (this )?consultation/i })).not.toBeInTheDocument();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 9 — Correction editor opens with existing note content
+// ---------------------------------------------------------------------------
+describe('9. correction editor pre-fills existing note', () => {
+  test('editor opens when "Correct consultation" is clicked', async () => {
+    await renderApprovedAndWait();
+    await userEvent.click(screen.getByRole('button', { name: /correct (this )?consultation/i }));
+    expect(screen.getByRole('region', { name: /correction editor/i })).toBeInTheDocument();
+  });
+
+  test('chief complaint field is pre-filled from source note', async () => {
+    await renderApprovedAndWait();
+    await userEvent.click(screen.getByRole('button', { name: /correct (this )?consultation/i }));
+
+    const chiefInput = screen.getByLabelText(/chief complaint/i);
+    expect(chiefInput).toHaveValue('Persistent cough');
+  });
+
+  test('editor shows informational note about original being preserved', async () => {
+    await renderApprovedAndWait();
+    await userEvent.click(screen.getByRole('button', { name: /correct (this )?consultation/i }));
+
+    expect(
+      screen.getByText(/the original approved consultation will remain unchanged/i)
+    ).toBeInTheDocument();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 10 — Correction API call
+// ---------------------------------------------------------------------------
+describe('10. correction API call', () => {
+  test('10a. correct API endpoint is called with edited note', async () => {
+    apiCreateCorrection.mockResolvedValue({
+      success:      true,
+      consultation: { _id: NEW_CORRECTION_ID, status: 'draft' },
+    });
+
+    await renderApprovedAndWait();
+    await userEvent.click(screen.getByRole('button', { name: /correct (this )?consultation/i }));
+
+    // Edit the chief complaint before submitting
+    const chiefInput = screen.getByLabelText(/chief complaint/i);
+    await userEvent.clear(chiefInput);
+    await userEvent.type(chiefInput, 'Corrected cough');
+
+    await userEvent.click(screen.getByRole('button', { name: /create correction draft/i }));
+
+    await waitFor(() => {
+      expect(apiCreateCorrection).toHaveBeenCalledWith(
+        CONSULT_ID,
+        expect.objectContaining({ chief_complaint: 'Corrected cough' })
+      );
+    });
+  });
+
+  test('10b. apiGetConsultation is NOT called again — original never mutated via UI', async () => {
+    apiCreateCorrection.mockResolvedValue({
+      success:      true,
+      consultation: { _id: NEW_CORRECTION_ID, status: 'draft' },
+    });
+
+    await renderApprovedAndWait();
+    const initialCallCount = apiGetConsultation.mock.calls.length;
+
+    await userEvent.click(screen.getByRole('button', { name: /correct (this )?consultation/i }));
+    await userEvent.click(screen.getByRole('button', { name: /create correction draft/i }));
+
+    await waitFor(() => expect(apiCreateCorrection).toHaveBeenCalled());
+
+    // No additional GET consultation calls should have happened
+    expect(apiGetConsultation.mock.calls.length).toBe(initialCallCount);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 11 — Error handling
+// ---------------------------------------------------------------------------
+describe('11. correction API error handling', () => {
+  test('shows error message when API returns success:false', async () => {
+    apiCreateCorrection.mockResolvedValue({
+      success: false,
+      message: 'Server error creating correction.',
+    });
+
+    await renderApprovedAndWait();
+    await userEvent.click(screen.getByRole('button', { name: /correct (this )?consultation/i }));
+    await userEvent.click(screen.getByRole('button', { name: /create correction draft/i }));
+
+    await waitFor(() => {
+      expect(screen.getByRole('alert')).toBeInTheDocument();
+    });
+
+    expect(screen.getByRole('alert').textContent).toMatch(/server error creating correction/i);
+  });
+
+  test('shows error message on network failure', async () => {
+    apiCreateCorrection.mockRejectedValue(new Error('Network failure'));
+
+    await renderApprovedAndWait();
+    await userEvent.click(screen.getByRole('button', { name: /correct (this )?consultation/i }));
+    await userEvent.click(screen.getByRole('button', { name: /create correction draft/i }));
+
+    await waitFor(() => {
+      expect(screen.getByRole('alert')).toBeInTheDocument();
+    });
+    expect(screen.getByRole('alert').textContent).toMatch(/network error/i);
+  });
+
+  test('Cancel button closes the editor without calling the API', async () => {
+    await renderApprovedAndWait();
+    await userEvent.click(screen.getByRole('button', { name: /correct (this )?consultation/i }));
+    expect(screen.getByRole('region', { name: /correction editor/i })).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: /cancel/i }));
+    expect(screen.queryByRole('region', { name: /correction editor/i })).not.toBeInTheDocument();
+    expect(apiCreateCorrection).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 12 — Correction draft identification
+// ---------------------------------------------------------------------------
+describe('12. correction draft is visually identified', () => {
+  test('page title changes to "Correction draft" for a correction consultation', async () => {
+    apiGetConsultation.mockResolvedValue({
+      success: true,
+      consultation: makeConsultation({
+        status: 'draft',
+        correctionOf: 'eeeeeeeeeeeeeeeeeeeeeeee',
+        approvedAt: null,
+      }),
+    });
+    renderDetailPage();
+    await waitFor(() => expect(screen.getByText('Correction draft')).toBeInTheDocument());
+  });
+});
