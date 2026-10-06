@@ -15,3 +15,25 @@ export async function apiGetConsultation(id) {
   const res = await apiFetch(`/api/consultations/${id}`);
   return res.json();
 }
+
+/**
+ * Create a correction to an approved consultation.
+ *
+ * POST /api/consultations/:id/correct
+ *
+ * @param {string} id            The source (approved) consultation _id.
+ * @param {object} [noteOverride] Optional note object with doctor edits.
+ *                                If omitted the server copies the source note.
+ *
+ * On success returns { success: true, consultation: <new draft doc> } HTTP 201.
+ * The source consultation's supersededBy field is updated server-side.
+ */
+export async function apiCreateCorrection(id, noteOverride) {
+  const body = noteOverride !== undefined ? { note: noteOverride } : {};
+  const res  = await apiFetch(`/api/consultations/${id}/correct`, {
+    method:  'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body:    JSON.stringify(body),
+  });
+  return res.json();
+}

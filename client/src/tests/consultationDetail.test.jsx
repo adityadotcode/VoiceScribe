@@ -26,7 +26,8 @@ import { describe, test, expect, beforeEach, vi } from 'vitest';
 // ---------------------------------------------------------------------------
 
 vi.mock('../services/api/consultations.js', () => ({
-  apiGetConsultation: vi.fn(),
+  apiGetConsultation:   vi.fn(),
+  apiCreateCorrection:  vi.fn(),
 }));
 
 vi.mock('../services/api/patients.js', () => ({
@@ -48,7 +49,7 @@ vi.mock('../api.js', () => ({
   getAuthToken:   vi.fn(),
 }));
 
-import { apiGetConsultation } from '../services/api/consultations.js';
+import { apiGetConsultation, apiCreateCorrection } from '../services/api/consultations.js';
 import {
   apiGetPatient,
   apiGetPatientConsultations,
