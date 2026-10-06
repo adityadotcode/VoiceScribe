@@ -307,4 +307,152 @@ module.exports = {
   getConsultation,
   updateConsultation,
   deleteConsultation,
+  createCorrection,
 };
+
+// ---------------------------------------------------------------------------
+// POST /api/consultations/:id/correct  — Phase 5B
+// ---------------------------------------------------------------------------
+// Creates a new consultation document that is a correction of an existing
+// approved consultation, without mutating the original.
+//
+// Design rules
+// ──────────────
+// 1. Source must exist and belong to req.user.id (ownership enforced at DB
+//    query level — same pattern as all other consultation endpoints).
+// 2. Source must have status === 'approved'.  Draft consultations use the
+//    normal PUT endpoint for edits; they cannot be "corrected".
+// 3. Source must not already have supersededBy set.  If it does the doctor
+//    should correct the replacement, not the superseded original.
+// 4. The new correction document starts as status='draft' with no
+//    approval metadata (approvedAt=null, approvedBy=null).
+// 5. correctionOf is set to the source _id; supersededBy is left null on
+//    the new document (nothing has replaced it yet).
+// 6. supersededBy on the SOURCE is updated to the new document's _id only
+//    AFTER the new document is successfully created (two-phase update to
+//    keep the source unchanged if creation fails).
+//
+// Fields copied from source        Why
+// ─────────────────────────────── ─────────────────────────────────────────
+// userId                           Same owner — never from client
+// patientId                        Same encounter — immutable
+// consultationDate                 Same clinical date — it is a correction,
+//                                  not a new encounter
+// encounterType                    Same encounter type
+// transcript                       Source audio / transcript reused
+// detectedLanguages                Same source audio
+// speakerUtterances                Same source audio
+// speakerRoleMapping               Same source audio role assignments
+// note                             Starting point the doctor edits
+//
+// Fields intentionally NOT copied
+// ─────────────────────────────── ─────────────────────────────────────────
+// status                           New correction starts as 'draft'
+// approvedAt                       New correction is not yet approved
+// approvedBy                       New correction is not yet approved
+// correctionOf                     Set to source._id (overrides any previous)
+// supersededBy                     null — nothing has replaced this yet
+//
+// Optional override via request body
+// ─────────────────────────────── ─────────────────────────────────────────
+// note                             Doctor may supply a pre-edited note.
+//                                  If absent, the source note is copied.
+//
+async function createCorrection(req, res) {
+  if (!validateObjectId(req.params.id, res)) return;
+
+  const userId   = req.user.id;   // always from verified token
+  const sourceId = req.params.id;
+
+  // Optionally accept a pre-edited note in the request body.
+  // All other fields are derived from the source — never from client input.
+  const { note: overrideNote } = req.body ?? {};
+
+  try {
+    // ── 1. Fetch and authorise source consultation ───────────────────────
+    const source = await Consultation.findOne({
+      _id:    sourceId,
+      userId,
+    });
+
+    if (!source) {
+      return res.status(404).json({
+        success: false,
+        message: 'Consultation not found.',
+      });
+    }
+
+    // ── 2. Source must be approved ──────────────────────────────────────
+    if (source.status !== 'approved') {
+      return res.status(409).json({
+        success: false,
+        message: 'Only approved consultations can be corrected. Use PUT to edit a draft.',
+      });
+    }
+
+    // ── 3. Source must not already be superseded ─────────────────────────
+    // The doctor should be correcting the effective approved consultation,
+    // not an already-replaced original.
+    if (source.supersededBy) {
+      return res.status(409).json({
+        success: false,
+        message: 'This consultation has already been superseded by a correction. Correct the effective approved consultation instead.',
+      });
+    }
+
+    // ── 4. Validate override note shape if provided ───────────────────────
+    if (overrideNote !== undefined) {
+      if (typeof overrideNote !== 'object' || Array.isArray(overrideNote)) {
+        return res.status(400).json({
+          success: false,
+          message: 'note must be an object.',
+        });
+      }
+    }
+
+    // ── 5. Create the correction document ────────────────────────────────
+    const correction = await Consultation.create({
+      // Ownership — from token only
+      userId,
+
+      // Patient/encounter context — preserved from source
+      patientId:        source.patientId,
+      consultationDate: source.consultationDate,
+      encounterType:    source.encounterType,
+
+      // Source audio/transcript data — reused verbatim
+      transcript:         source.transcript,
+      detectedLanguages:  source.detectedLanguages,
+      speakerUtterances:  source.speakerUtterances,
+      speakerRoleMapping: source.speakerRoleMapping,
+
+      // Note — doctor-supplied override, or copy of the source note
+      note: overrideNote ?? source.note?.toObject?.() ?? source.note ?? {},
+
+      // Correction chain — link back to the source
+      correctionOf: source._id,
+      supersededBy: null,   // nothing has replaced this new document yet
+
+      // Approval metadata — intentionally cleared; correction starts as draft
+      status:     'draft',
+      approvedAt: null,
+      approvedBy: null,
+    });
+
+    // ── 6. Update source — mark it as superseded by the correction ────────
+    // Only executed after the new document is successfully persisted.
+    source.supersededBy = correction._id;
+    await source.save();
+
+    return res.status(201).json({
+      success:      true,
+      consultation: correction,
+    });
+  } catch (err) {
+    console.error('[consultationController] createCorrection error:', err.message);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to create correction.',
+    });
+  }
+}
