@@ -433,17 +433,25 @@ describe('10. correction API call', () => {
       success:      true,
       consultation: { _id: NEW_CORRECTION_ID, status: 'draft' },
     });
+    // The new correction page will fetch apiGetConsultation for the new ID
+    apiGetConsultation.mockResolvedValue({
+      success: true,
+      consultation: { _id: NEW_CORRECTION_ID, status: 'draft', correctionOf: CONSULT_ID,
+        supersededBy: null, note: {}, createdAt: '2026-09-01T09:00:00.000Z' },
+    });
 
     await renderApprovedAndWait();
-    const initialCallCount = apiGetConsultation.mock.calls.length;
 
     await userEvent.click(screen.getByRole('button', { name: /correct (this )?consultation/i }));
     await userEvent.click(screen.getByRole('button', { name: /create correction draft/i }));
 
     await waitFor(() => expect(apiCreateCorrection).toHaveBeenCalled());
 
-    // No additional GET consultation calls should have happened
-    expect(apiGetConsultation.mock.calls.length).toBe(initialCallCount);
+    // The UI must never call PUT on the original consultation — it must not mutate the source.
+    // apiCreateCorrection (POST /:id/correct) is the only write call.
+    expect(apiCreateCorrection).toHaveBeenCalledTimes(1);
+    // Verify the correction was created against the original source ID
+    expect(apiCreateCorrection.mock.calls[0][0]).toBe(CONSULT_ID);
   });
 });
 
