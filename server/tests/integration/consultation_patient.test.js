@@ -334,7 +334,8 @@ describe('GET /api/patients/:id/last-approved', () => {
   });
 
   test('13. ignores superseded originals (correction-aware query)', async () => {
-    // The controller must query { supersededBy: null, correctionOf: null }
+    // Phase 5D: the query uses { supersededBy: null } — correctionOf is no longer
+    // filtered here because approved corrections ARE the effective version.
     Patient.findOne.mockReturnValueOnce(leanResult(makePatient()));
     Consultation.findOne.mockReturnValueOnce(findOneChain(null));
 
@@ -346,9 +347,11 @@ describe('GET /api/patients/:id/last-approved', () => {
       expect.objectContaining({
         status:       'approved',
         supersededBy: null,
-        correctionOf: null,
       })
     );
+    // correctionOf must NOT appear in the query (Phase 5D fix)
+    const query = Consultation.findOne.mock.calls[0][0];
+    expect(query).not.toHaveProperty('correctionOf');
   });
 
   test('14. success → 200 with consultation note context fields', async () => {

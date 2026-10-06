@@ -277,20 +277,23 @@ describe('GET /api/patients/:id/overview', () => {
   });
 
   // ── 9. Superseded approved consultation is ignored ──────────────────────
-  test('9. latestApproved query uses correction-aware filter (supersededBy=null, correctionOf=null)', async () => {
+  test('9. latestApproved query uses correction-aware filter (supersededBy=null, correctionOf omitted)', async () => {
     setupHappyPath();
 
     await request(app)
       .get(BASE_URL)
       .set('Authorization', `Bearer ${tokenA}`);
 
-    // findOne must have been called with the correction-aware criteria
+    // findOne must have been called with supersededBy=null.
+    // Phase 5D: correctionOf is intentionally NOT filtered here —
+    // approved corrections ARE the effective version and must be surfaced.
     const findOneCall = Consultation.findOne.mock.calls[0][0];
     expect(findOneCall).toMatchObject({
       status:       'approved',
       supersededBy: null,
-      correctionOf: null,
     });
+    // correctionOf must NOT be in the query (Phase 5D fix)
+    expect(findOneCall).not.toHaveProperty('correctionOf');
   });
 
   // ── 10. No approved consultation → null ─────────────────────────────────

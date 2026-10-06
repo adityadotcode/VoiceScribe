@@ -292,7 +292,8 @@ describe('POST /api/patients/:id/change-summary', () => {
   test('10. previous-consultation query excludes superseded originals', async () => {
     Patient.findOne.mockReturnValueOnce(leanResult(makePatient()));
     Consultation.findOne.mockReturnValueOnce(leanResult(makeCurrentConsultation()));
-    // The query itself enforces { supersededBy: null, correctionOf: null }
+    // Phase 5D: query uses { supersededBy: null } — correctionOf is no longer
+    // filtered so that approved corrections are valid comparison bases.
     Consultation.findOne.mockReturnValueOnce(findOneChain(null));
 
     await request(app)
@@ -300,13 +301,14 @@ describe('POST /api/patients/:id/change-summary', () => {
       .set('Authorization', `Bearer ${tokenA}`)
       .send(BODY);
 
-    // Third findOne call must have included the correction-filtering criteria
-    const thirdCall = Consultation.findOne.mock.calls[1][0];
-    expect(thirdCall).toMatchObject({
+    // Second findOne call is the previousConsultation query
+    const prevCall = Consultation.findOne.mock.calls[1][0];
+    expect(prevCall).toMatchObject({
       supersededBy: null,
-      correctionOf: null,
       status:       'approved',
     });
+    // correctionOf must NOT appear (Phase 5D fix)
+    expect(prevCall).not.toHaveProperty('correctionOf');
   });
 
   // ── Security: userId from token only ────────────────────────────────────

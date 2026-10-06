@@ -296,7 +296,9 @@ async function listPatientConsultations(req, res) {
 // the canonical, current-approved record.
 //
 // Correction-aware query:
-//   status='approved', supersededBy=null, correctionOf=null
+//   status='approved', supersededBy=null
+//   (correctionOf intentionally omitted — Phase 5D: approved corrections ARE
+//    the effective version and must be returned here)
 //   sorted by consultationDate descending → first result is the current note.
 //
 // Returns 404 when no such consultation exists (patient has no approved notes
