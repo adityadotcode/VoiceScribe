@@ -1,19 +1,22 @@
 /**
- * Phase 3B.2A — NewConsultationPage tests
+ * Phase 5A — NewConsultationPage tests (rich pre-consultation context)
  *
- * Scenarios (6):
- *   1. Patient search — results appear after API call
- *   2. Patient selection — clicking a result shows SelectedPatientPanel
- *   3. Selected patient display — name, DOB, sex, MR shown; Change patient present
- *   4. Last-approved context displayed — fields rendered after patient selected
- *   5. No previous consultation state — correct empty message shown
- *   6. Start button disabled before selection, enabled after selection
+ * The page now calls GET /api/patients/:id/overview (apiGetPatientOverview)
+ * instead of the old apiGetLastApproved call. All existing scenarios are
+ * preserved and new Phase 5A scenarios are added.
  *
- * Strategy:
- *   - vi.mock the patients API service module; no real network calls.
- *   - Render NewConsultationPage inside MemoryRouter at /consultation/new.
- *   - Use userEvent for interactions.
- *   - vi.useFakeTimers to control the 300 ms search debounce where needed.
+ * Scenarios (14):
+ *   1a. Patient search — initial load
+ *   1b. Patient search — typing triggers new call
+ *   2.  Patient selection
+ *   3a-d. Selected patient display (name, change btn, MR, reset)
+ *   4a-d. Patient context loads — clinical fields rendered
+ *   5.  No previous approved consultation empty state
+ *   6a-b. Start button disabled/enabled
+ *   [NEW] 7a. Patient context loading state
+ *   [NEW] 7b. Patient context error state
+ *   [NEW] 7c. Statistics rendered
+ *   [NEW] 7d. "View full patient profile" link present
  */
 
 import { render, screen, waitFor, act } from '@testing-library/react';
@@ -22,19 +25,19 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest';
 
 // ---------------------------------------------------------------------------
-// Mock the patients API service
+// Mocks
 // ---------------------------------------------------------------------------
 vi.mock('../services/api/patients.js', () => ({
   apiListPatients:             vi.fn(),
   apiGetPatient:               vi.fn(),
   apiUpdatePatient:            vi.fn(),
   apiGetPatientConsultations:  vi.fn(),
-  apiGetLastApproved:          vi.fn(),
+  apiGetLastApproved:          vi.fn(),   // kept for mock completeness
+  apiGetPatientOverview:       vi.fn(),   // Phase 5A
   apiCreatePatient:            vi.fn(),
+  apiGetChangeSummary:         vi.fn(),
 }));
 
-// Defensive: mock api.js so cross-test apiFetch contamination cannot
-// bleed into this file when tests run in the same Vitest worker.
 vi.mock('../api.js', () => ({
   apiFetch:       vi.fn(),
   apiUrl:         (p) => p,
@@ -45,25 +48,24 @@ vi.mock('../api.js', () => ({
 
 import {
   apiListPatients,
-  apiGetLastApproved,
+  apiGetPatientOverview,
 } from '../services/api/patients.js';
 
-// ---------------------------------------------------------------------------
-// Component under test
-// ---------------------------------------------------------------------------
 import NewConsultationPage from '../pages/NewConsultationPage.jsx';
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
+const PATIENT_ID = 'aaaaaaaaaaaaaaaaaaaaaaaa';
+
 function renderPage() {
   return render(
     <MemoryRouter initialEntries={['/consultation/new']}>
       <Routes>
         <Route path="/consultation/new" element={<NewConsultationPage />} />
-        {/* Destination after Start is clicked */}
-        <Route path="/dashboard" element={<div data-testid="dashboard-page">Dashboard</div>} />
+        <Route path="/dashboard"        element={<div data-testid="dashboard-page">Dashboard</div>} />
+        <Route path="/patients/:id"     element={<div data-testid="patient-profile">Profile</div>} />
       </Routes>
     </MemoryRouter>
   );
@@ -71,7 +73,7 @@ function renderPage() {
 
 function makePatient(overrides = {}) {
   return {
-    _id:             'aaaaaaaaaaaaaaaaaaaaaaaa',
+    _id:             PATIENT_ID,
     firstName:       'Alice',
     lastName:        'Smith',
     dateOfBirth:     '1990-05-15T00:00:00.000Z',
@@ -84,18 +86,26 @@ function makePatient(overrides = {}) {
   };
 }
 
-function makeLastApproved(overrides = {}) {
+function makeOverview(overrides = {}) {
   return {
-    _id:              'cccccccccccccccccccccccc',
-    status:           'approved',
-    consultationDate: '2026-08-20T09:00:00.000Z',
-    note: {
+    success: true,
+    patient: makePatient(),
+    statistics: {
+      totalConsultations:    3,
+      approvedConsultations: 2,
+      draftConsultations:    1,
+      lastConsultationDate:  '2026-09-15T09:00:00.000Z',
+    },
+    latestApprovedConsultation: {
+      id:                    'cccccccccccccccccccccccc',
+      consultationDate:      '2026-08-20T09:00:00.000Z',
       chief_complaint:       'Persistent cough',
       symptoms:              ['cough', 'fatigue'],
       medications_mentioned: ['paracetamol'],
       assessment:            'Likely viral URTI',
       follow_up:             'Return in 1 week if not improved',
     },
+    recentConsultations: [],
     ...overrides,
   };
 }
@@ -108,9 +118,8 @@ beforeEach(() => {
   vi.clearAllMocks();
   vi.useFakeTimers({ shouldAdvanceTime: true });
 
-  // Default: search returns one patient; last-approved returns a consultation
   apiListPatients.mockResolvedValue({ success: true, patients: [makePatient()] });
-  apiGetLastApproved.mockResolvedValue({ success: true, consultation: makeLastApproved() });
+  apiGetPatientOverview.mockResolvedValue(makeOverview());
 });
 
 afterEach(() => {
@@ -118,34 +127,38 @@ afterEach(() => {
 });
 
 // ---------------------------------------------------------------------------
-// 1 — Patient search: results appear
+// Helper: get to selected-patient + context-loaded state
+// ---------------------------------------------------------------------------
+async function selectAliceAndWaitForContext() {
+  renderPage();
+  await act(async () => { vi.advanceTimersByTime(400); });
+  await waitFor(() => expect(screen.getByText('Smith, Alice')).toBeInTheDocument());
+  await userEvent.click(screen.getByText('Smith, Alice'));
+  await waitFor(() => expect(screen.getByText('Persistent cough')).toBeInTheDocument());
+}
+
+// ---------------------------------------------------------------------------
+// 1 — Patient search
 // ---------------------------------------------------------------------------
 describe('1. patient search', () => {
   test('initial load fetches patients and renders result rows', async () => {
     renderPage();
-
-    // Advance the 300 ms debounce timer for the initial empty-query search
     await act(async () => { vi.advanceTimersByTime(400); });
-
     await waitFor(() => {
       expect(screen.getByText('Smith, Alice')).toBeInTheDocument();
     });
-
     expect(apiListPatients).toHaveBeenCalledWith({ search: '' });
   });
 
   test('typing in the search box triggers a new API call', async () => {
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime.bind(vi) });
     renderPage();
-
-    // Flush initial load
     await act(async () => { vi.advanceTimersByTime(400); });
     await waitFor(() => expect(screen.getByText('Smith, Alice')).toBeInTheDocument());
 
     const input = screen.getByRole('searchbox', { name: /search patients/i });
     await user.clear(input);
     await user.type(input, 'ali');
-
     await act(async () => { vi.advanceTimersByTime(400); });
 
     await waitFor(() => {
@@ -160,16 +173,13 @@ describe('1. patient search', () => {
 describe('2. patient selection', () => {
   test('clicking a result row selects the patient and hides the search panel', async () => {
     renderPage();
-
     await act(async () => { vi.advanceTimersByTime(400); });
     await waitFor(() => expect(screen.getByText('Smith, Alice')).toBeInTheDocument());
-
     await userEvent.click(screen.getByText('Smith, Alice'));
 
-    // Search box gone, selected name visible in the panel heading
     await waitFor(() => {
       expect(screen.queryByRole('searchbox')).not.toBeInTheDocument();
-      expect(screen.getByText('Alice Smith')).toBeInTheDocument();
+      expect(screen.getAllByText('Alice Smith').length).toBeGreaterThan(0);
     });
   });
 });
@@ -183,12 +193,12 @@ describe('3. selected patient display', () => {
     await act(async () => { vi.advanceTimersByTime(400); });
     await waitFor(() => expect(screen.getByText('Smith, Alice')).toBeInTheDocument());
     await userEvent.click(screen.getByText('Smith, Alice'));
-    await waitFor(() => expect(screen.getByText('Alice Smith')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getAllByText('Alice Smith').length).toBeGreaterThan(0));
   }
 
   test('shows patient name', async () => {
     await selectAlice();
-    expect(screen.getByText('Alice Smith')).toBeInTheDocument();
+    expect(screen.getAllByText('Alice Smith').length).toBeGreaterThan(0);
   });
 
   test('shows "Change patient" button', async () => {
@@ -196,9 +206,11 @@ describe('3. selected patient display', () => {
     expect(screen.getByRole('button', { name: /change patient/i })).toBeInTheDocument();
   });
 
-  test('shows medical record ID when present', async () => {
+  test('shows medical record ID in context panel', async () => {
     await selectAlice();
-    expect(screen.getByText('MR001')).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByText(/MR001/)).toBeInTheDocument();
+    });
   });
 
   test('"Change patient" resets to search panel', async () => {
@@ -211,45 +223,38 @@ describe('3. selected patient display', () => {
 });
 
 // ---------------------------------------------------------------------------
-// 4 — Last-approved context displayed
+// 4 — Patient context loaded — clinical fields rendered
 // ---------------------------------------------------------------------------
 describe('4. last-approved context displayed', () => {
-  async function selectAndWaitForContext() {
-    renderPage();
-    await act(async () => { vi.advanceTimersByTime(400); });
-    await waitFor(() => expect(screen.getByText('Smith, Alice')).toBeInTheDocument());
-    await userEvent.click(screen.getByText('Smith, Alice'));
-    // Wait for LastApprovedPanel to finish loading
-    await waitFor(() => expect(screen.getByText('Persistent cough')).toBeInTheDocument());
-  }
-
   test('chief complaint is shown', async () => {
-    await selectAndWaitForContext();
+    await selectAliceAndWaitForContext();
     expect(screen.getByText('Persistent cough')).toBeInTheDocument();
   });
 
   test('assessment is shown', async () => {
-    await selectAndWaitForContext();
+    await selectAliceAndWaitForContext();
     expect(screen.getByText('Likely viral URTI')).toBeInTheDocument();
   });
 
   test('follow-up is shown', async () => {
-    await selectAndWaitForContext();
+    await selectAliceAndWaitForContext();
     expect(screen.getByText('Return in 1 week if not improved')).toBeInTheDocument();
   });
 
-  test('calls apiGetLastApproved with the correct patient ID', async () => {
-    await selectAndWaitForContext();
-    expect(apiGetLastApproved).toHaveBeenCalledWith('aaaaaaaaaaaaaaaaaaaaaaaa');
+  test('calls apiGetPatientOverview with the correct patient ID', async () => {
+    await selectAliceAndWaitForContext();
+    expect(apiGetPatientOverview).toHaveBeenCalledWith(PATIENT_ID);
   });
 });
 
 // ---------------------------------------------------------------------------
-// 5 — No previous consultation state
+// 5 — No previous approved consultation
 // ---------------------------------------------------------------------------
 describe('5. no previous consultation state', () => {
-  test('shows "No previous approved consultation." when API returns 404/false', async () => {
-    apiGetLastApproved.mockResolvedValue({ success: false, message: 'No approved consultation found.' });
+  test('shows "No previous approved consultation." when null', async () => {
+    apiGetPatientOverview.mockResolvedValue(
+      makeOverview({ latestApprovedConsultation: null })
+    );
 
     renderPage();
     await act(async () => { vi.advanceTimersByTime(400); });
@@ -269,7 +274,6 @@ describe('6. Start button disabled before selection, enabled after', () => {
   test('Start button is disabled when no patient is selected', async () => {
     renderPage();
     await act(async () => { vi.advanceTimersByTime(400); });
-
     const btn = screen.getByRole('button', { name: /start consultation/i });
     expect(btn).toBeDisabled();
   });
@@ -283,5 +287,53 @@ describe('6. Start button disabled before selection, enabled after', () => {
     await waitFor(() => {
       expect(screen.getByRole('button', { name: /start consultation/i })).not.toBeDisabled();
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 7 — Phase 5A new scenarios
+// ---------------------------------------------------------------------------
+describe('7. Phase 5A rich context panel', () => {
+  test('7a. context loading state shown while overview is in-flight', async () => {
+    apiGetPatientOverview.mockReturnValue(new Promise(() => {}));
+
+    renderPage();
+    await act(async () => { vi.advanceTimersByTime(400); });
+    await waitFor(() => expect(screen.getByText('Smith, Alice')).toBeInTheDocument());
+    await userEvent.click(screen.getByText('Smith, Alice'));
+
+    await waitFor(() => {
+      expect(screen.getByText('Loading patient context…')).toBeInTheDocument();
+    });
+  });
+
+  test('7b. context error state shown when overview fails', async () => {
+    apiGetPatientOverview.mockRejectedValue(new Error('Network failure'));
+
+    renderPage();
+    await act(async () => { vi.advanceTimersByTime(400); });
+    await waitFor(() => expect(screen.getByText('Smith, Alice')).toBeInTheDocument());
+    await userEvent.click(screen.getByText('Smith, Alice'));
+
+    await waitFor(() => {
+      expect(screen.getByRole('alert')).toBeInTheDocument();
+    });
+  });
+
+  test('7c. statistics are rendered (total, approved, draft, last visit)', async () => {
+    await selectAliceAndWaitForContext();
+    expect(screen.getByText('3')).toBeInTheDocument();   // total
+    expect(screen.getByText('2')).toBeInTheDocument();   // approved
+    expect(screen.getByText('1')).toBeInTheDocument();   // draft
+    expect(screen.getByText('Total visits')).toBeInTheDocument();
+    expect(screen.getByText('Approved')).toBeInTheDocument();
+    expect(screen.getByText('Last visit')).toBeInTheDocument();
+  });
+
+  test('7d. "View full patient profile" link is present and points to /patients/:id', async () => {
+    await selectAliceAndWaitForContext();
+    const link = screen.getByRole('link', { name: /view full patient profile/i });
+    expect(link).toBeInTheDocument();
+    expect(link).toHaveAttribute('href', `/patients/${PATIENT_ID}`);
   });
 });

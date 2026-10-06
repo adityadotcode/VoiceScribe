@@ -1,27 +1,25 @@
 /**
- * NewConsultationPage — Phase 3B.2A
+ * NewConsultationPage — Phase 5A (Rich Pre-Consultation Context)
  *
  * Flow:
  *   1. Doctor searches for and selects an existing patient.
- *   2. Selected patient's basic info is shown with a "Change patient" link.
- *   3. The patient's last effective approved consultation is fetched and
- *      displayed as context for the upcoming encounter.
- *   4. "Start consultation" button is enabled once a patient is selected.
- *      Clicking it navigates to /dashboard where the recording pipeline lives.
- *
- * TODO (Phase 3B.2B):
- *   Pass selectedPatient.id through to the recording/save pipeline so the
- *   new consultation is created with patientId set. Currently the navigate
- *   to /dashboard starts a vanilla consultation without patientId because
- *   DashboardApp holds all pipeline state internally and does not accept
- *   router state yet.
+ *   2. After selection, GET /api/patients/:id/overview is called once.
+ *      This delivers: patient record + statistics + latest approved consultation
+ *      (with full note) + recent consultations — all in a single round-trip.
+ *   3. A rich pre-consultation context panel is shown:
+ *        - Patient header (name, DOB, sex, MR)
+ *        - Stats strip (total visits, approved, last visit date)
+ *        - "Last visit" section with full clinical note fields
+ *        - "View full patient profile" link → /patients/:id
+ *   4. "Start consultation" button navigates to /dashboard with patientId
+ *      threaded through location.state (Phase 3B.2B wiring, unchanged).
  */
 
 import { useEffect, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import {
   apiListPatients,
-  apiGetLastApproved,
+  apiGetPatientOverview,
 } from '../services/api/patients.js';
 
 // ---------------------------------------------------------------------------
@@ -35,11 +33,22 @@ function formatDate(iso) {
   });
 }
 
-function formatConsultDate(iso) {
+function formatShort(iso) {
   if (!iso) return '—';
   return new Date(iso).toLocaleDateString(undefined, {
     year: 'numeric', month: 'short', day: 'numeric',
   });
+}
+
+/** Approximate age in years from an ISO date string. */
+function ageFromDob(iso) {
+  if (!iso) return null;
+  const dob  = new Date(iso);
+  const now  = new Date();
+  let age    = now.getFullYear() - dob.getFullYear();
+  const m    = now.getMonth() - dob.getMonth();
+  if (m < 0 || (m === 0 && now.getDate() < dob.getDate())) age--;
+  return age >= 0 ? age : null;
 }
 
 const SEX_LABELS = {
@@ -59,7 +68,7 @@ function listField(arr) {
 }
 
 // ---------------------------------------------------------------------------
-// PatientSearchPanel
+// PatientSearchPanel — unchanged
 // ---------------------------------------------------------------------------
 function PatientSearchPanel({ onSelect }) {
   const [query,    setQuery]    = useState('');
@@ -92,11 +101,9 @@ function PatientSearchPanel({ onSelect }) {
     const q = e.target.value;
     setQuery(q);
     clearTimeout(debounceRef.current);
-    // Trigger search after 300 ms; always search (empty query returns all)
     debounceRef.current = setTimeout(() => search(q), 300);
   }
 
-  // Trigger an initial load on mount so the list is pre-populated
   useEffect(() => { search(''); }, []);
 
   return (
@@ -160,7 +167,166 @@ function PatientSearchPanel({ onSelect }) {
 }
 
 // ---------------------------------------------------------------------------
-// SelectedPatientPanel
+// PatientContextPanel — Phase 5A
+// Fetches /api/patients/:id/overview and renders rich clinical context.
+// ---------------------------------------------------------------------------
+function PatientContextPanel({ patientId, patientName }) {
+  const [overview, setOverview] = useState(null);
+  const [loading,  setLoading]  = useState(true);
+  const [error,    setError]    = useState('');
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setError('');
+    setOverview(null);
+
+    apiGetPatientOverview(patientId)
+      .then((data) => {
+        if (cancelled) return;
+        if (!data.success) {
+          setError('Could not load patient context.');
+        } else {
+          setOverview(data);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setError('Network error — could not load patient context.');
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+
+    return () => { cancelled = true; };
+  }, [patientId]);
+
+  // ── Loading ────────────────────────────────────────────────────────────
+  if (loading) {
+    return (
+      <div className="pcp-panel pcp-panel--loading" aria-live="polite">
+        <p className="pcp-loading">Loading patient context…</p>
+      </div>
+    );
+  }
+
+  // ── Error ──────────────────────────────────────────────────────────────
+  if (error) {
+    return (
+      <div className="pcp-panel">
+        <p className="pcp-error" role="alert">{error}</p>
+      </div>
+    );
+  }
+
+  if (!overview) return null;
+
+  const { patient, statistics, latestApprovedConsultation: latest } = overview;
+  const age = ageFromDob(patient.dateOfBirth);
+
+  return (
+    <div className="pcp-panel" aria-label="Patient clinical context">
+
+      {/* ── Patient header ── */}
+      <div className="pcp-header">
+        <div className="pcp-name-row">
+          <h3 className="pcp-name">{patient.firstName} {patient.lastName}</h3>
+          {patient.medicalRecordId && (
+            <span className="pcp-mrid">MR: {patient.medicalRecordId}</span>
+          )}
+        </div>
+        <p className="pcp-meta">
+          {age !== null ? `${age} y/o · ` : ''}{sexLabel(patient.biologicalSex)}
+          {patient.dateOfBirth ? ` · Born ${formatShort(patient.dateOfBirth)}` : ''}
+        </p>
+      </div>
+
+      {/* ── Statistics strip ── */}
+      <div className="pcp-stats" aria-label="Consultation statistics">
+        <div className="pcp-stat">
+          <span className="pcp-stat-value">{statistics.totalConsultations}</span>
+          <span className="pcp-stat-label">Total visits</span>
+        </div>
+        <div className="pcp-stat pcp-stat--approved">
+          <span className="pcp-stat-value">{statistics.approvedConsultations}</span>
+          <span className="pcp-stat-label">Approved</span>
+        </div>
+        <div className="pcp-stat pcp-stat--draft">
+          <span className="pcp-stat-value">{statistics.draftConsultations}</span>
+          <span className="pcp-stat-label">Draft</span>
+        </div>
+        <div className="pcp-stat pcp-stat--date">
+          <span className="pcp-stat-value">
+            {statistics.lastConsultationDate
+              ? formatShort(statistics.lastConsultationDate)
+              : '—'}
+          </span>
+          <span className="pcp-stat-label">Last visit</span>
+        </div>
+      </div>
+
+      {/* ── Last visit details ── */}
+      <div className="pcp-section">
+        <h4 className="pcp-section-title">Last approved visit</h4>
+
+        {!latest && (
+          <p className="pcp-empty">No previous approved consultation.</p>
+        )}
+
+        {latest && (
+          <dl className="pcp-fields">
+            <div className="pcp-field">
+              <dt>Date</dt>
+              <dd>{formatShort(latest.consultationDate)}</dd>
+            </div>
+            {latest.chief_complaint && (
+              <div className="pcp-field pcp-field--wide">
+                <dt>Chief complaint</dt>
+                <dd>{latest.chief_complaint}</dd>
+              </div>
+            )}
+            {latest.symptoms?.length > 0 && (
+              <div className="pcp-field pcp-field--wide">
+                <dt>Symptoms</dt>
+                <dd>{listField(latest.symptoms)}</dd>
+              </div>
+            )}
+            {latest.medications_mentioned?.length > 0 && (
+              <div className="pcp-field pcp-field--wide">
+                <dt>Medications mentioned</dt>
+                <dd>{listField(latest.medications_mentioned)}</dd>
+              </div>
+            )}
+            {latest.assessment && (
+              <div className="pcp-field pcp-field--wide">
+                <dt>Assessment</dt>
+                <dd>{latest.assessment}</dd>
+              </div>
+            )}
+            {latest.follow_up && (
+              <div className="pcp-field pcp-field--wide">
+                <dt>Follow-up</dt>
+                <dd>{latest.follow_up}</dd>
+              </div>
+            )}
+          </dl>
+        )}
+      </div>
+
+      {/* ── View full profile link ── */}
+      <div className="pcp-footer">
+        <Link
+          to={`/patients/${patientId}`}
+          className="pcp-profile-link"
+        >
+          View full patient profile →
+        </Link>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// SelectedPatientPanel — compact header; now shows Change patient only
 // ---------------------------------------------------------------------------
 function SelectedPatientPanel({ patient, onClear }) {
   return (
@@ -177,117 +343,7 @@ function SelectedPatientPanel({ patient, onClear }) {
           Change patient
         </button>
       </div>
-      <dl className="nc-patient-details">
-        <div className="nc-detail-row">
-          <dt>Date of birth</dt>
-          <dd>{formatDate(patient.dateOfBirth)}</dd>
-        </div>
-        <div className="nc-detail-row">
-          <dt>Biological sex</dt>
-          <dd>{sexLabel(patient.biologicalSex)}</dd>
-        </div>
-        {patient.medicalRecordId && (
-          <div className="nc-detail-row">
-            <dt>Medical record ID</dt>
-            <dd>{patient.medicalRecordId}</dd>
-          </div>
-        )}
-      </dl>
     </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// LastApprovedPanel
-// ---------------------------------------------------------------------------
-function LastApprovedPanel({ patientId }) {
-  const [consultation, setConsultation] = useState(null);
-  const [loading,      setLoading]      = useState(true);
-  const [empty,        setEmpty]        = useState(false);
-  const [error,        setError]        = useState('');
-
-  useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    setEmpty(false);
-    setError('');
-    setConsultation(null);
-
-    apiGetLastApproved(patientId)
-      .then((data) => {
-        if (cancelled) return;
-        if (!data.success) {
-          // 404 = no approved consultation yet — not an error, just empty
-          setEmpty(true);
-        } else {
-          setConsultation(data.consultation);
-        }
-      })
-      .catch(() => {
-        if (!cancelled) setError('Could not load last approved consultation.');
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-
-    return () => { cancelled = true; };
-  }, [patientId]);
-
-  return (
-    <section className="nc-last-approved" aria-labelledby="nc-la-heading">
-      <h3 className="nc-la-heading" id="nc-la-heading">
-        Last approved consultation
-      </h3>
-
-      {loading && <p className="nc-la-loading">Loading…</p>}
-
-      {!loading && error && (
-        <p className="nc-la-error" role="alert">{error}</p>
-      )}
-
-      {!loading && !error && empty && (
-        <p className="nc-la-empty">No previous approved consultation.</p>
-      )}
-
-      {!loading && !error && consultation && (
-        <dl className="nc-la-fields">
-          <div className="nc-la-row">
-            <dt>Consultation date</dt>
-            <dd>{formatConsultDate(consultation.consultationDate ?? consultation.createdAt)}</dd>
-          </div>
-          {consultation.note?.chief_complaint && (
-            <div className="nc-la-row nc-la-row--wide">
-              <dt>Chief complaint</dt>
-              <dd>{consultation.note.chief_complaint}</dd>
-            </div>
-          )}
-          {consultation.note?.symptoms !== undefined && (
-            <div className="nc-la-row nc-la-row--wide">
-              <dt>Symptoms</dt>
-              <dd>{listField(consultation.note.symptoms)}</dd>
-            </div>
-          )}
-          {consultation.note?.medications_mentioned !== undefined && (
-            <div className="nc-la-row nc-la-row--wide">
-              <dt>Medications mentioned</dt>
-              <dd>{listField(consultation.note.medications_mentioned)}</dd>
-            </div>
-          )}
-          {consultation.note?.assessment && (
-            <div className="nc-la-row nc-la-row--wide">
-              <dt>Assessment</dt>
-              <dd>{consultation.note.assessment}</dd>
-            </div>
-          )}
-          {consultation.note?.follow_up && (
-            <div className="nc-la-row nc-la-row--wide">
-              <dt>Follow-up</dt>
-              <dd>{consultation.note.follow_up}</dd>
-            </div>
-          )}
-        </dl>
-      )}
-    </section>
   );
 }
 
@@ -307,16 +363,11 @@ export default function NewConsultationPage() {
   }
 
   function handleStart() {
-    // TODO (Phase 3B.2B): pass selectedPatient._id through router state so
-    // DashboardApp can pick it up and include patientId when creating the
-    // consultation. Currently DashboardApp holds all pipeline state internally
-    // and does not read location.state.  For now we navigate to /dashboard
-    // which starts the recording flow — patientId wiring is the next task.
     navigate('/dashboard', {
       state: {
         startRecording: true,
-        patientId:      selectedPatient?._id ?? null,
-        patientName:    selectedPatient
+        patientId:   selectedPatient?._id ?? null,
+        patientName: selectedPatient
           ? `${selectedPatient.firstName} ${selectedPatient.lastName}`
           : null,
       },
@@ -356,14 +407,17 @@ export default function NewConsultationPage() {
           </section>
         </div>
 
-        {/* ── Right column: last-approved context ── */}
+        {/* ── Right column: rich pre-consultation context ── */}
         <div className="nc-col-right">
           {selectedPatient ? (
-            <LastApprovedPanel patientId={selectedPatient._id} />
+            <PatientContextPanel
+              patientId={selectedPatient._id}
+              patientName={`${selectedPatient.firstName} ${selectedPatient.lastName}`}
+            />
           ) : (
             <div className="nc-context-placeholder">
               <p className="nc-context-hint">
-                Select a patient to see their last approved consultation.
+                Select a patient to see their clinical context.
               </p>
             </div>
           )}

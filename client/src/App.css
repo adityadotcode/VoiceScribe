@@ -4481,3 +4481,185 @@
   .p360-card,
   .p360-header-card    { padding: 14px 16px; }
 }
+
+/* ============================================================
+   Phase 5A — Pre-Consultation Context Panel
+   Prefix: pcp-  (patient context panel)
+   ============================================================ */
+
+.pcp-panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 16px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  height: 100%;
+}
+
+.pcp-panel--loading {
+  align-items: center;
+  justify-content: center;
+  min-height: 120px;
+}
+
+/* ── Patient header ── */
+.pcp-header { display: flex; flex-direction: column; gap: 4px; }
+
+.pcp-name-row {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.pcp-name {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text-h);
+  margin: 0;
+}
+
+.pcp-mrid {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-sub);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 1px 8px;
+}
+
+.pcp-meta {
+  font-size: 12px;
+  color: var(--text-sub);
+  margin: 0;
+}
+
+/* ── Statistics strip ── */
+.pcp-stats {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+}
+
+@media (max-width: 600px) {
+  .pcp-stats { grid-template-columns: repeat(2, 1fr); }
+}
+
+.pcp-stat {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--border-mid);
+  border-radius: var(--radius-md);
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.pcp-stat--approved { border-left-color: var(--green-mid); }
+.pcp-stat--draft    { border-left-color: var(--amber-mid); }
+.pcp-stat--date     { border-left-color: var(--brand); }
+
+.pcp-stat-value {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text-h);
+  line-height: 1.2;
+}
+
+.pcp-stat-label {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-sub);
+}
+
+/* ── Last visit section ── */
+.pcp-section {
+  border-top: 1px solid var(--border);
+  padding-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.pcp-section-title {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--text-sub);
+  margin: 0;
+}
+
+.pcp-empty {
+  font-size: 13px;
+  color: var(--text-sub);
+  font-style: italic;
+  margin: 0;
+}
+
+.pcp-loading {
+  font-size: 13px;
+  color: var(--text-sub);
+  margin: 0;
+}
+
+.pcp-error {
+  font-size: 13px;
+  color: var(--red);
+  margin: 0;
+}
+
+/* ── Field list ── */
+.pcp-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+}
+
+.pcp-field {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.pcp-field dt {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--text-sub);
+}
+
+.pcp-field dd {
+  font-size: 12px;
+  color: var(--text-h);
+  margin: 0;
+  line-height: 1.5;
+}
+
+/* ── Footer / profile link ── */
+.pcp-footer {
+  margin-top: auto;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+
+.pcp-profile-link {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--brand);
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  transition: color 0.12s;
+}
+
+.pcp-profile-link:hover { color: var(--brand-dark); }
