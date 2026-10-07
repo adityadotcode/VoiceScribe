@@ -4942,3 +4942,57 @@
     text-align: center;
   }
 }
+
+/* ============================================================
+   Phase 6A — What Changed Since Last Visit?
+   Patient 360 wrapper: p360-wc-*
+   Pre-consultation panel wrapper: pcp-change-*
+   Internal diff rendering reuses cs-* classes (no duplication).
+   ============================================================ */
+
+/* ── Patient 360 section wrapper ── */
+.p360-wc-section {
+  /* inherits p360-card background/border/radius — just adds top padding override */
+  padding-top: 18px;
+}
+
+.p360-wc-header {
+  margin-bottom: 4px;
+}
+
+/* subtitle sits directly below the section title */
+.p360-wc-subtitle {
+  font-size: 12px;
+  color: var(--text-sub);
+  margin: 2px 0 12px;
+  line-height: 1.4;
+}
+
+/* Override the idle trigger button inside the section — make it feel integrated */
+.p360-wc-section .cs-panel--idle {
+  background: transparent;
+  border-style: dashed;
+}
+
+/* ── Pre-consultation panel change section ── */
+.pcp-change-section {
+  border-top: 1px solid var(--border);
+  padding-top: 12px;
+  margin-top: 4px;
+}
+
+/* Tighten the trigger button in the compact pcp panel */
+.pcp-change-section .cs-trigger-btn {
+  width: 100%;
+  font-size: 12px;
+  padding: 7px 12px;
+}
+
+/* Keep narrative disclaimer legible at small size */
+.pcp-change-section .cs-narrative-disclaimer {
+  font-size: 11px;
+}
+
+@media (max-width: 600px) {
+  .p360-wc-section { padding-top: 14px; }
+}

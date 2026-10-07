@@ -1,5 +1,5 @@
 /**
- * NewConsultationPage — Phase 5A (Rich Pre-Consultation Context)
+ * NewConsultationPage — Phase 5A (Rich Pre-Consultation Context) / Phase 6A
  *
  * Flow:
  *   1. Doctor searches for and selects an existing patient.
@@ -10,6 +10,7 @@
  *        - Patient header (name, DOB, sex, MR)
  *        - Stats strip (total visits, approved, last visit date)
  *        - "Last visit" section with full clinical note fields
+ *        - "What changed since last visit?" (Phase 6A — ChangeSummaryPanel)
  *        - "View full patient profile" link → /patients/:id
  *   4. "Start consultation" button navigates to /dashboard with patientId
  *      threaded through location.state (Phase 3B.2B wiring, unchanged).
@@ -21,6 +22,7 @@ import {
   apiListPatients,
   apiGetPatientOverview,
 } from '../services/api/patients.js';
+import ChangeSummaryPanel from '../components/consultation/ChangeSummaryPanel.jsx';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -311,6 +313,17 @@ function PatientContextPanel({ patientId, patientName }) {
           </dl>
         )}
       </div>
+
+      {/* ── What changed since last visit? — Phase 6A ── */}
+      {latest && (
+        <div className="pcp-change-section" aria-label="What changed since last visit">
+          <h4 className="pcp-section-title">What changed since last visit?</h4>
+          <ChangeSummaryPanel
+            patientId={patientId}
+            consultationId={latest.id}
+          />
+        </div>
+      )}
 
       {/* ── View full profile link ── */}
       <div className="pcp-footer">

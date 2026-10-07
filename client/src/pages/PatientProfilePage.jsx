@@ -1,5 +1,5 @@
 /**
- * PatientProfilePage — Patient 360° view (Patient 360.2)
+ * PatientProfilePage — Patient 360° view (Patient 360.2 / Phase 6A)
  *
  * Loads a single call to GET /api/patients/:id/overview which returns
  * the patient record, aggregate statistics, latest effective approved
@@ -11,6 +11,7 @@
  *   ├ Patient header  (name, DOB, sex, MR, phone)
  *   ├ Statistics cards (total / approved / draft / last visit)
  *   ├ Latest approved visit (chief complaint, symptoms, meds, assessment, follow-up)
+ *   ├ What changed since last visit? (Phase 6A — ChangeSummaryPanel, user-triggered)
  *   └ Recent consultations timeline (up to 5, correction-aware)
  *
  * Edit mode is unchanged from the original PatientProfilePage.
@@ -22,6 +23,7 @@ import {
   apiGetPatientOverview,
   apiUpdatePatient,
 } from '../services/api/patients.js';
+import ChangeSummaryPanel from '../components/consultation/ChangeSummaryPanel.jsx';
 
 // ---------------------------------------------------------------------------
 // Constants / helpers
@@ -499,6 +501,26 @@ export default function PatientProfilePage() {
 
       {/* Latest approved visit */}
       <LatestVisitSection consultation={latestApprovedConsultation} />
+
+      {/* Phase 6A — What changed since last visit?
+          Uses the latest effective approved consultation as the "current" note.
+          The backend finds the previous effective approved note automatically.
+          Only rendered when a latestApprovedConsultation exists; the panel
+          itself handles the hasPreviousConsultation=false empty state. */}
+      {latestApprovedConsultation && (
+        <section className="p360-card p360-wc-section" aria-label="What changed since last visit">
+          <div className="p360-wc-header">
+            <h2 className="p360-section-title">What changed since last visit?</h2>
+            <p className="p360-wc-subtitle">
+              Compares the latest approved visit against the one before it.
+            </p>
+          </div>
+          <ChangeSummaryPanel
+            patientId={id}
+            consultationId={latestApprovedConsultation.id}
+          />
+        </section>
+      )}
 
       {/* Recent consultations timeline */}
       <TimelineSection consultations={recentConsultations} />

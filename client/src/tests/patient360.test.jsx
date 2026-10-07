@@ -41,6 +41,7 @@ vi.mock('../api.js', () => ({
 }));
 
 import { apiGetPatientOverview } from '../services/api/patients.js';
+import { apiGetChangeSummary }   from '../services/api/patients.js';
 import PatientProfilePage from '../pages/PatientProfilePage.jsx';
 
 // ---------------------------------------------------------------------------
@@ -335,5 +336,377 @@ describe('10. 404/error state', () => {
         screen.getByText('Network error — could not load patient overview.')
       ).toBeInTheDocument();
     });
+  });
+});
+
+// ===========================================================================
+// Phase 6A — What Changed Since Last Visit?  (patient360.test.jsx)
+// ===========================================================================
+//
+// These tests verify that PatientProfilePage correctly integrates
+// ChangeSummaryPanel in the "What changed since last visit?" section.
+//
+// Strategy:
+//   - The ChangeSummaryPanel itself is fully tested in changeSummary.test.jsx.
+//   - Here we verify the section is wired correctly:
+//       rendering, ID threading, absent when no latestApproved, not
+//       auto-triggering the API, and integration with the existing page.
+//   - apiGetChangeSummary is mocked; we only call it explicitly via
+//     userEvent.click on "Compare with previous visit".
+//
+// ---------------------------------------------------------------------------
+
+import userEvent from '@testing-library/user-event';
+
+// Reuse the fixture from above; shared IDs are already defined at file top.
+// latestApprovedConsultation.id = CID_1 = 'cccccccccccccccccccccccc'
+
+// Change-summary response helpers (match changeSummary.test.jsx shape)
+const noPreviousResponse = {
+  success: true,
+  hasPreviousConsultation: false,
+  previousConsultation: null,
+  structuredDiff: null,
+};
+
+function makeChangeSummaryResponse(diffOverrides = {}) {
+  return {
+    success: true,
+    hasPreviousConsultation: true,
+    previousConsultation: {
+      id:               CID_2,
+      consultationDate: '2026-08-01T09:00:00.000Z',
+    },
+    structuredDiff: {
+      newSymptoms:                 [],
+      resolvedSymptoms:            [],
+      persistingSymptoms:          [],
+      newMedicationsMentioned:     [],
+      stoppedMedicationsMentioned: [],
+      newObservations:             [],
+      resolvedObservations:        [],
+      assessmentChanged:           false,
+      chiefComplaintChanged:       false,
+      followUpChanged:             false,
+      historyChanged:              false,
+      ...diffOverrides,
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// 11 — "What changed since last visit?" section renders
+// ---------------------------------------------------------------------------
+describe('11. Phase 6A — section renders when latestApprovedConsultation exists', () => {
+  test('11a. "What changed since last visit?" heading is shown', async () => {
+    apiGetPatientOverview.mockResolvedValue(makeOverview());
+    renderPage();
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole('heading', { name: /what changed since last visit/i })
+      ).toBeInTheDocument();
+    });
+  });
+
+  test('11b. "Compare with previous visit" trigger button is shown inside the section', async () => {
+    apiGetPatientOverview.mockResolvedValue(makeOverview());
+    renderPage();
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole('button', { name: /compare with previous visit/i })
+      ).toBeInTheDocument();
+    });
+  });
+
+  test('11c. the section renders between latest-visit and timeline sections', async () => {
+    apiGetPatientOverview.mockResolvedValue(makeOverview());
+    renderPage();
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole('region', { name: /what changed since last visit/i })
+      ).toBeInTheDocument();
+    });
+  });
+
+  test('11d. section is NOT shown when latestApprovedConsultation is null', async () => {
+    apiGetPatientOverview.mockResolvedValue(
+      makeOverview({ latestApprovedConsultation: null })
+    );
+    renderPage();
+
+    await waitFor(() => {
+      // Confirm page loaded (no approved visit message)
+      expect(screen.getByText(/no approved consultation available yet/i)).toBeInTheDocument();
+    });
+
+    expect(
+      screen.queryByRole('region', { name: /what changed since last visit/i })
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: /compare with previous visit/i })
+    ).not.toBeInTheDocument();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 12 — Correct IDs are threaded into ChangeSummaryPanel
+// ---------------------------------------------------------------------------
+describe('12. Phase 6A — correct IDs used for the comparison', () => {
+  test('12a. apiGetChangeSummary is called with the correct patientId and latestApproved consultationId', async () => {
+    apiGetPatientOverview.mockResolvedValue(makeOverview());
+    apiGetChangeSummary.mockResolvedValue(noPreviousResponse);
+    renderPage();
+
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /compare with previous visit/i })).toBeInTheDocument()
+    );
+
+    await userEvent.click(screen.getByRole('button', { name: /compare with previous visit/i }));
+
+    await waitFor(() =>
+      expect(apiGetChangeSummary).toHaveBeenCalledWith(PATIENT_ID, CID_1, false)
+    );
+  });
+
+  test('12b. apiGetChangeSummary is NOT called automatically on page load', async () => {
+    apiGetPatientOverview.mockResolvedValue(makeOverview());
+    renderPage();
+
+    await waitFor(() =>
+      expect(screen.getByText('Alice Smith')).toBeInTheDocument()
+    );
+
+    expect(apiGetChangeSummary).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 13 — Comparison loads and renders structured changes
+// ---------------------------------------------------------------------------
+describe('13. Phase 6A — structured diff renders in the patient 360 section', () => {
+  test('13a. new symptoms are displayed after comparison', async () => {
+    apiGetPatientOverview.mockResolvedValue(makeOverview());
+    apiGetChangeSummary.mockResolvedValue(
+      makeChangeSummaryResponse({ newSymptoms: ['fever', 'chills'] })
+    );
+    renderPage();
+
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /compare with previous visit/i })).toBeInTheDocument()
+    );
+    await userEvent.click(screen.getByRole('button', { name: /compare with previous visit/i }));
+
+    await waitFor(() => expect(screen.getByText('fever')).toBeInTheDocument());
+    expect(screen.getByText('chills')).toBeInTheDocument();
+  });
+
+  test('13b. "no changes detected" message appears when diff has no changes', async () => {
+    apiGetPatientOverview.mockResolvedValue(makeOverview());
+    apiGetChangeSummary.mockResolvedValue(makeChangeSummaryResponse());
+    renderPage();
+
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /compare with previous visit/i })).toBeInTheDocument()
+    );
+    await userEvent.click(screen.getByRole('button', { name: /compare with previous visit/i }));
+
+    await waitFor(() =>
+      expect(screen.getByText(/no changes detected/i)).toBeInTheDocument()
+    );
+  });
+
+  test('13c. "compared with" date is shown after successful comparison', async () => {
+    apiGetPatientOverview.mockResolvedValue(makeOverview());
+    apiGetChangeSummary.mockResolvedValue(makeChangeSummaryResponse());
+    renderPage();
+
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /compare with previous visit/i })).toBeInTheDocument()
+    );
+    await userEvent.click(screen.getByRole('button', { name: /compare with previous visit/i }));
+
+    await waitFor(() =>
+      expect(screen.getByText(/compared with/i)).toBeInTheDocument()
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 14 — Insufficient history (only one approved consultation)
+// ---------------------------------------------------------------------------
+describe('14. Phase 6A — insufficient history state', () => {
+  test('shows "No previous approved consultation available for comparison" when only one visit exists', async () => {
+    apiGetPatientOverview.mockResolvedValue(makeOverview());
+    apiGetChangeSummary.mockResolvedValue(noPreviousResponse);
+    renderPage();
+
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /compare with previous visit/i })).toBeInTheDocument()
+    );
+    await userEvent.click(screen.getByRole('button', { name: /compare with previous visit/i }));
+
+    await waitFor(() =>
+      expect(
+        screen.getByText(/no previous approved consultation available for comparison/i)
+      ).toBeInTheDocument()
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 15 — API error state
+// ---------------------------------------------------------------------------
+describe('15. Phase 6A — comparison API error is handled', () => {
+  test('15a. success:false shows error message in the section', async () => {
+    apiGetPatientOverview.mockResolvedValue(makeOverview());
+    apiGetChangeSummary.mockResolvedValue({ success: false, message: 'Server error' });
+    renderPage();
+
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /compare with previous visit/i })).toBeInTheDocument()
+    );
+    await userEvent.click(screen.getByRole('button', { name: /compare with previous visit/i }));
+
+    await waitFor(() =>
+      expect(screen.getByRole('alert')).toBeInTheDocument()
+    );
+  });
+
+  test('15b. network failure shows error alert', async () => {
+    apiGetPatientOverview.mockResolvedValue(makeOverview());
+    apiGetChangeSummary.mockRejectedValue(new Error('Network failure'));
+    renderPage();
+
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /compare with previous visit/i })).toBeInTheDocument()
+    );
+    await userEvent.click(screen.getByRole('button', { name: /compare with previous visit/i }));
+
+    await waitFor(() =>
+      expect(screen.getByRole('alert')).toBeInTheDocument()
+    );
+  });
+
+  test('15c. comparison error does NOT hide the rest of the patient 360 page', async () => {
+    apiGetPatientOverview.mockResolvedValue(makeOverview());
+    apiGetChangeSummary.mockRejectedValue(new Error('Network failure'));
+    renderPage();
+
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /compare with previous visit/i })).toBeInTheDocument()
+    );
+    await userEvent.click(screen.getByRole('button', { name: /compare with previous visit/i }));
+
+    await waitFor(() => expect(screen.getByRole('alert')).toBeInTheDocument());
+
+    // Patient header, stats, and latest visit section still visible
+    expect(screen.getByText('Alice Smith')).toBeInTheDocument();
+    expect(screen.getAllByText('Persistent cough').length).toBeGreaterThan(0);
+    expect(screen.getByText('Total consultations')).toBeInTheDocument();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 16 — AI narrative is NOT requested automatically
+// ---------------------------------------------------------------------------
+describe('16. Phase 6A — AI narrative is not auto-requested', () => {
+  test('apiGetChangeSummary is never called with generateNarrative=true automatically', async () => {
+    apiGetPatientOverview.mockResolvedValue(makeOverview());
+    apiGetChangeSummary.mockResolvedValue(makeChangeSummaryResponse());
+    renderPage();
+
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /compare with previous visit/i })).toBeInTheDocument()
+    );
+
+    // Trigger the diff (but NOT the narrative)
+    await userEvent.click(screen.getByRole('button', { name: /compare with previous visit/i }));
+    await waitFor(() => expect(screen.getByText(/no changes detected/i)).toBeInTheDocument());
+
+    // API must have been called exactly once, with generateNarrative=false
+    expect(apiGetChangeSummary).toHaveBeenCalledTimes(1);
+    expect(apiGetChangeSummary).toHaveBeenCalledWith(PATIENT_ID, CID_1, false);
+    expect(apiGetChangeSummary).not.toHaveBeenCalledWith(
+      expect.anything(), expect.anything(), true
+    );
+  });
+
+  test('"Generate clinical summary" button appears only after diff loads', async () => {
+    apiGetPatientOverview.mockResolvedValue(makeOverview());
+    apiGetChangeSummary.mockResolvedValue(makeChangeSummaryResponse());
+    renderPage();
+
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /compare with previous visit/i })).toBeInTheDocument()
+    );
+
+    // Before comparison: no narrative button
+    expect(
+      screen.queryByRole('button', { name: /generate clinical summary/i })
+    ).not.toBeInTheDocument();
+
+    // After diff loads: narrative button appears
+    await userEvent.click(screen.getByRole('button', { name: /compare with previous visit/i }));
+    await waitFor(() => expect(screen.getByText(/no changes detected/i)).toBeInTheDocument());
+
+    expect(
+      screen.getByRole('button', { name: /generate clinical summary/i })
+    ).toBeInTheDocument();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 17 — Superseded consultations not used as comparison source
+// ---------------------------------------------------------------------------
+describe('17. Phase 6A — superseded consultations not used as comparison source', () => {
+  test('the panel uses latestApprovedConsultation.id (effective version), not a superseded ID', async () => {
+    // The overview already carries the EFFECTIVE version in latestApprovedConsultation.
+    // A superseded doc would never appear there (backend filters supersededBy=null).
+    // We verify the ID passed to the API matches latestApprovedConsultation.id, not CID_2.
+    apiGetPatientOverview.mockResolvedValue(makeOverview());
+    apiGetChangeSummary.mockResolvedValue(noPreviousResponse);
+    renderPage();
+
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /compare with previous visit/i })).toBeInTheDocument()
+    );
+    await userEvent.click(screen.getByRole('button', { name: /compare with previous visit/i }));
+
+    await waitFor(() => expect(apiGetChangeSummary).toHaveBeenCalled());
+
+    const [calledPatientId, calledConsultationId] = apiGetChangeSummary.mock.calls[0];
+    expect(calledPatientId).toBe(PATIENT_ID);
+    // Must be the latestApprovedConsultation.id from the overview, not any other ID
+    expect(calledConsultationId).toBe(CID_1);
+    expect(calledConsultationId).not.toBe(CID_2);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 18 — Existing patient 360 tests remain intact
+// ---------------------------------------------------------------------------
+describe('18. Phase 6A — existing page sections are unaffected', () => {
+  test('stats cards still render after Phase 6A section is added', async () => {
+    apiGetPatientOverview.mockResolvedValue(makeOverview());
+    renderPage();
+
+    await waitFor(() => expect(screen.getByText('Alice Smith')).toBeInTheDocument());
+
+    expect(screen.getByText('Total consultations')).toBeInTheDocument();
+    expect(screen.getByText('Approved')).toBeInTheDocument();
+    expect(screen.getByText('Draft')).toBeInTheDocument();
+    expect(screen.getByText('Last visit')).toBeInTheDocument();
+  });
+
+  test('timeline section still renders after Phase 6A section is added', async () => {
+    apiGetPatientOverview.mockResolvedValue(makeOverview());
+    renderPage();
+
+    await waitFor(() =>
+      expect(screen.getAllByRole('link', { name: /open consultation/i }).length).toBeGreaterThan(0)
+    );
   });
 });

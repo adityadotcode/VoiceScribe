@@ -49,6 +49,7 @@ vi.mock('../api.js', () => ({
 import {
   apiListPatients,
   apiGetPatientOverview,
+  apiGetChangeSummary,
 } from '../services/api/patients.js';
 
 import NewConsultationPage from '../pages/NewConsultationPage.jsx';
@@ -335,5 +336,273 @@ describe('7. Phase 5A rich context panel', () => {
     const link = screen.getByRole('link', { name: /view full patient profile/i });
     expect(link).toBeInTheDocument();
     expect(link).toHaveAttribute('href', `/patients/${PATIENT_ID}`);
+  });
+});
+
+// ===========================================================================
+// Phase 6A — What Changed Since Last Visit?  (newConsultation.test.jsx)
+// ===========================================================================
+//
+// Tests that the "What changed since last visit?" feature is exposed in the
+// pre-consultation context panel (PatientContextPanel inside NewConsultationPage).
+//
+// Strategy:
+//   - Uses selectAliceAndWaitForContext() from above to reach the loaded state.
+//   - apiGetChangeSummary is mocked per test; the panel itself is validated
+//     via the existing ChangeSummaryPanel selectors.
+//
+// ---------------------------------------------------------------------------
+
+const CONSULT_ID = 'cccccccccccccccccccccccc'; // matches makeOverview latestApprovedConsultation.id
+
+const noPreviousChangeSummary = {
+  success: true,
+  hasPreviousConsultation: false,
+  previousConsultation: null,
+  structuredDiff: null,
+};
+
+function makeChangeSummary(diffOverrides = {}) {
+  return {
+    success: true,
+    hasPreviousConsultation: true,
+    previousConsultation: {
+      id:               'bbbbbbbbbbbbbbbbbbbbbbbb',
+      consultationDate: '2026-07-01T09:00:00.000Z',
+    },
+    structuredDiff: {
+      newSymptoms:                 [],
+      resolvedSymptoms:            [],
+      persistingSymptoms:          [],
+      newMedicationsMentioned:     [],
+      stoppedMedicationsMentioned: [],
+      newObservations:             [],
+      resolvedObservations:        [],
+      assessmentChanged:           false,
+      chiefComplaintChanged:       false,
+      followUpChanged:             false,
+      historyChanged:              false,
+      ...diffOverrides,
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// 8 — "What changed since last visit?" section in pre-consultation context
+// ---------------------------------------------------------------------------
+describe('8. Phase 6A — change summary in pre-consultation context', () => {
+  test('8a. "What changed since last visit?" heading is shown in the context panel', async () => {
+    await selectAliceAndWaitForContext();
+
+    expect(
+      screen.getByRole('heading', { name: /what changed since last visit/i })
+    ).toBeInTheDocument();
+  });
+
+  test('8b. "Compare with previous visit" trigger button is shown inside the context panel', async () => {
+    await selectAliceAndWaitForContext();
+
+    expect(
+      screen.getByRole('button', { name: /compare with previous visit/i })
+    ).toBeInTheDocument();
+  });
+
+  test('8c. apiGetChangeSummary is NOT called automatically on patient selection', async () => {
+    await selectAliceAndWaitForContext();
+
+    expect(apiGetChangeSummary).not.toHaveBeenCalled();
+  });
+
+  test('8d. "Compare with previous visit" calls apiGetChangeSummary with correct IDs', async () => {
+    apiGetChangeSummary.mockResolvedValue(noPreviousChangeSummary);
+    await selectAliceAndWaitForContext();
+
+    await userEvent.click(
+      screen.getByRole('button', { name: /compare with previous visit/i })
+    );
+
+    await waitFor(() =>
+      expect(apiGetChangeSummary).toHaveBeenCalledWith(PATIENT_ID, CONSULT_ID, false)
+    );
+  });
+
+  test('8e. comparison section is NOT shown when latestApprovedConsultation is null', async () => {
+    apiGetPatientOverview.mockResolvedValue(
+      makeOverview({ latestApprovedConsultation: null })
+    );
+
+    renderPage();
+    await act(async () => { vi.advanceTimersByTime(400); });
+    await waitFor(() => expect(screen.getByText('Smith, Alice')).toBeInTheDocument());
+    await userEvent.click(screen.getByText('Smith, Alice'));
+
+    await waitFor(() =>
+      expect(screen.getByText('No previous approved consultation.')).toBeInTheDocument()
+    );
+
+    expect(
+      screen.queryByRole('button', { name: /compare with previous visit/i })
+    ).not.toBeInTheDocument();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 9 — Pre-consultation context integration: comparison renders correctly
+// ---------------------------------------------------------------------------
+describe('9. Phase 6A — comparison renders in pre-consultation context', () => {
+  test('9a. structured changes are shown after trigger is clicked', async () => {
+    apiGetChangeSummary.mockResolvedValue(
+      makeChangeSummary({ newSymptoms: ['headache'] })
+    );
+    await selectAliceAndWaitForContext();
+
+    await userEvent.click(
+      screen.getByRole('button', { name: /compare with previous visit/i })
+    );
+
+    await waitFor(() =>
+      expect(screen.getByText('headache')).toBeInTheDocument()
+    );
+  });
+
+  test('9b. insufficient history — shows "no previous approved consultation" message', async () => {
+    apiGetChangeSummary.mockResolvedValue(noPreviousChangeSummary);
+    await selectAliceAndWaitForContext();
+
+    await userEvent.click(
+      screen.getByRole('button', { name: /compare with previous visit/i })
+    );
+
+    await waitFor(() =>
+      expect(
+        screen.getByText(/no previous approved consultation available for comparison/i)
+      ).toBeInTheDocument()
+    );
+  });
+
+  test('9c. API error shows alert without breaking the context panel', async () => {
+    apiGetChangeSummary.mockRejectedValue(new Error('Network failure'));
+    await selectAliceAndWaitForContext();
+
+    await userEvent.click(
+      screen.getByRole('button', { name: /compare with previous visit/i })
+    );
+
+    await waitFor(() =>
+      expect(screen.getByRole('alert')).toBeInTheDocument()
+    );
+
+    // Patient context fields still visible after error
+    expect(screen.getByText('Persistent cough')).toBeInTheDocument();
+  });
+
+  test('9d. AI narrative is NOT requested automatically', async () => {
+    apiGetChangeSummary.mockResolvedValue(makeChangeSummary());
+    await selectAliceAndWaitForContext();
+
+    await userEvent.click(
+      screen.getByRole('button', { name: /compare with previous visit/i })
+    );
+
+    await waitFor(() => expect(apiGetChangeSummary).toHaveBeenCalled());
+
+    // Only one call, with generateNarrative=false
+    expect(apiGetChangeSummary).toHaveBeenCalledTimes(1);
+    expect(apiGetChangeSummary).not.toHaveBeenCalledWith(
+      expect.anything(), expect.anything(), true
+    );
+  });
+
+  test('9e. "Generate clinical summary" explicit action calls the AI endpoint', async () => {
+    apiGetChangeSummary
+      .mockResolvedValueOnce(makeChangeSummary())    // first call: diff
+      .mockResolvedValueOnce({                        // second call: narrative
+        ...makeChangeSummary(),
+        clinicalSummary: 'Patient presents with headache. No prescription changes.',
+        generatedAt:     '2026-10-01T10:00:00.000Z',
+      });
+
+    await selectAliceAndWaitForContext();
+
+    await userEvent.click(
+      screen.getByRole('button', { name: /compare with previous visit/i })
+    );
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /generate clinical summary/i })).toBeInTheDocument()
+    );
+
+    await userEvent.click(
+      screen.getByRole('button', { name: /generate clinical summary/i })
+    );
+
+    await waitFor(() =>
+      expect(apiGetChangeSummary).toHaveBeenCalledWith(PATIENT_ID, CONSULT_ID, true)
+    );
+  });
+
+  test('9f. AI failure does not hide the deterministic diff', async () => {
+    apiGetChangeSummary
+      .mockResolvedValueOnce(makeChangeSummary({ newSymptoms: ['nausea'] }))
+      .mockResolvedValueOnce({ success: false, message: 'Bedrock unavailable' });
+
+    await selectAliceAndWaitForContext();
+
+    await userEvent.click(
+      screen.getByRole('button', { name: /compare with previous visit/i })
+    );
+    await waitFor(() => expect(screen.getByText('nausea')).toBeInTheDocument());
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /generate clinical summary/i })).toBeInTheDocument()
+    );
+
+    await userEvent.click(
+      screen.getByRole('button', { name: /generate clinical summary/i })
+    );
+
+    // AI error appears
+    await waitFor(() =>
+      expect(
+        screen.getByText(/clinical summary could not be generated/i)
+      ).toBeInTheDocument()
+    );
+
+    // Deterministic diff still visible
+    expect(screen.getByText('nausea')).toBeInTheDocument();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 10 — Existing consultation workflow is unaffected
+// ---------------------------------------------------------------------------
+describe('10. Phase 6A — existing new-consultation flow is unaffected', () => {
+  test('Start consultation button still navigates to /dashboard with patientId', async () => {
+    await selectAliceAndWaitForContext();
+
+    await userEvent.click(
+      screen.getByRole('button', { name: /start consultation/i })
+    );
+
+    await waitFor(() =>
+      expect(screen.getByTestId('dashboard-page')).toBeInTheDocument()
+    );
+  });
+
+  test('"Change patient" resets context panel including change summary trigger', async () => {
+    await selectAliceAndWaitForContext();
+
+    // The change summary trigger is visible
+    expect(
+      screen.getByRole('button', { name: /compare with previous visit/i })
+    ).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: /change patient/i }));
+
+    // After reset, back to search — no change summary trigger visible
+    await waitFor(() =>
+      expect(screen.getByRole('searchbox', { name: /search patients/i })).toBeInTheDocument()
+    );
+    expect(
+      screen.queryByRole('button', { name: /compare with previous visit/i })
+    ).not.toBeInTheDocument();
   });
 });
