@@ -4839,3 +4839,106 @@
   .cd-cf-submit-btn,
   .cd-cf-cancel-btn { width: 100%; text-align: center; }
 }
+
+/* ============================================================
+   Phase 5E — Correction Approval UI
+   Prefix: cd-approve-*, cd-approval-*
+   ============================================================ */
+
+/* ── Approve button — green, mirrors cd-correct-btn shape ── */
+.cd-approve-btn {
+  appearance: none;
+  border: 1px solid var(--green-border);
+  border-radius: var(--radius-md);
+  background: var(--green-bg);
+  color: var(--green);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 8px 18px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.12s, border-color 0.12s;
+}
+.cd-approve-btn:hover:not(:disabled) {
+  background: var(--green-border);
+}
+.cd-approve-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ── Approval panel container ── */
+.cd-approval-panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 16px 20px;
+  margin-bottom: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* Idle state: lighter green tint to distinguish from content cards */
+.cd-approval-panel--idle {
+  background: var(--green-bg);
+  border-color: var(--green-border);
+}
+
+/* Confirming state: amber tint to signal an action is about to happen */
+.cd-approval-panel--confirming {
+  background: var(--amber-bg);
+  border: 1px solid var(--amber-border);
+}
+
+/* ── Approval banner (approved correction — green) ── */
+.cd-banner--approved-correction {
+  background: var(--green-bg);
+  border: 1px solid var(--green-border);
+  color: var(--green);
+}
+
+/* ── Approval hint text ── */
+.cd-approval-hint {
+  font-size: 13px;
+  color: var(--text-sub);
+  margin: 0;
+  line-height: 1.5;
+}
+
+/* ── Confirmation title / body ── */
+.cd-approval-confirm-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-h);
+  margin: 0;
+}
+
+.cd-approval-confirm-body {
+  font-size: 13px;
+  color: var(--text);
+  margin: 0;
+  line-height: 1.6;
+}
+
+/* ── Action row (reuses cd-cf-actions layout) ── */
+.cd-approval-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+  align-items: center;
+}
+
+@media (max-width: 600px) {
+  .cd-approval-panel { padding: 14px 16px; }
+  .cd-approval-actions {
+    flex-direction: column-reverse;
+    align-items: stretch;
+  }
+  .cd-approve-btn,
+  .cd-approval-actions .cd-cf-cancel-btn {
+    width: 100%;
+    text-align: center;
+  }
+}

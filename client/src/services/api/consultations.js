@@ -37,3 +37,29 @@ export async function apiCreateCorrection(id, noteOverride) {
   });
   return res.json();
 }
+
+/**
+ * Approve a consultation draft (including correction drafts).
+ *
+ * Uses the existing PUT /api/consultations/:id endpoint — the same one
+ * the V1 review screen uses — by sending { status: 'approved', note }.
+ * The note is required so the backend validates chief_complaint.
+ *
+ * Phase 5E: used on the ConsultationDetailPage to approve correction drafts
+ * directly from the detail view, without going through the V1 recording pipeline.
+ *
+ * @param {string} id   The consultation _id to approve.
+ * @param {object} note The full note object from the consultation (must include
+ *                      chief_complaint — the backend requires it for approval).
+ *
+ * Returns { success: true, consultation } or { success: false, message }.
+ * 409 = already approved. 400 = validation error (missing chief_complaint).
+ */
+export async function apiApproveConsultation(id, note) {
+  const res = await apiFetch(`/api/consultations/${id}`, {
+    method:  'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body:    JSON.stringify({ status: 'approved', note }),
+  });
+  return res.json();
+}

@@ -1,5 +1,5 @@
 /**
- * ConsultationDetailPage — Phase 3C.1 / Phase 5C
+ * ConsultationDetailPage — Phase 3C.1 / Phase 5C / Phase 5E
  *
  * Read-only view of a single consultation fetched via:
  *   GET /api/consultations/:id
@@ -10,11 +10,20 @@
  *   - POST /api/consultations/:id/correct on submit.
  *   - Navigation to the new draft correction on success.
  *   - Superseded/correction relationship links in banners (already existed).
+ *
+ * Phase 5E adds:
+ *   - Correction draft state clearly distinguished from normal draft and approved.
+ *   - "Approve correction" action on draft correction consultations (correctionOf ≠ null).
+ *   - Inline approval confirmation panel — no window.confirm() / modal library needed.
+ *   - Reuses PUT /api/consultations/:id (same as V1 review screen) — no new endpoint.
+ *   - On success: refreshes the consultation in-place so banners update immediately.
+ *   - On already-approved (409): shows a friendly message and re-fetches.
+ *   - Superseded original clearly labelled with link to the effective correction.
  */
 
-import { useEffect, useReducer, useState } from 'react';
+import { useEffect, useReducer, useState, useCallback } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { apiGetConsultation, apiCreateCorrection } from '../services/api/consultations.js';
+import { apiGetConsultation, apiCreateCorrection, apiApproveConsultation } from '../services/api/consultations.js';
 import ChangeSummaryPanel from '../components/consultation/ChangeSummaryPanel.jsx';
 
 // ---------------------------------------------------------------------------
@@ -333,6 +342,143 @@ function CorrectionEditor({ sourceNote, sourceId, patientId, onCancel, onSuccess
 }
 
 // ---------------------------------------------------------------------------
+// CorrectionApprovalPanel — inline approval UI (Phase 5E)
+// ---------------------------------------------------------------------------
+/**
+ * Shown inside ConsultationDetailPage when the loaded consultation is a
+ * correction draft (status === 'draft' && correctionOf != null).
+ *
+ * States:
+ *   idle        — "Approve correction" button shown
+ *   confirming  — inline confirmation with warning text + confirm/cancel buttons
+ *   approving   — spinner / disabled state while PUT is in-flight
+ *   error       — error message with retry option
+ *
+ * On success the parent re-fetches the consultation so all banners update.
+ *
+ * Props:
+ *   consultationId  {string}  _id of the correction draft to approve
+ *   note            {object}  current note (required by PUT endpoint for chief_complaint)
+ *   onSuccess       {fn}      called after successful approval (no args)
+ */
+function CorrectionApprovalPanel({ consultationId, note, onSuccess }) {
+  const [panelState, setPanelState] = useState('idle'); // idle | confirming | approving | error
+  const [errorMsg,   setErrorMsg]   = useState('');
+
+  function handleRequestApprove() {
+    setPanelState('confirming');
+    setErrorMsg('');
+  }
+
+  function handleCancelConfirm() {
+    setPanelState('idle');
+    setErrorMsg('');
+  }
+
+  async function handleConfirmApprove() {
+    setPanelState('approving');
+    setErrorMsg('');
+    try {
+      const data = await apiApproveConsultation(consultationId, note);
+      if (!data.success) {
+        // 409 "already approved" is handled gracefully — treat as success so
+        // the parent re-fetches and shows the approved state.
+        if (data.message && /already approved/i.test(data.message)) {
+          onSuccess();
+          return;
+        }
+        setErrorMsg(data.message || 'Could not approve the correction.');
+        setPanelState('error');
+      } else {
+        onSuccess();
+      }
+    } catch {
+      setErrorMsg('Network error — could not approve the correction.');
+      setPanelState('error');
+    }
+  }
+
+  if (panelState === 'idle') {
+    return (
+      <section className="cd-approval-panel cd-approval-panel--idle" aria-label="Approve correction">
+        <p className="cd-approval-hint">
+          Review the corrected note above, then approve to make it the effective version of this encounter.
+        </p>
+        <button
+          type="button"
+          className="cd-approve-btn"
+          onClick={handleRequestApprove}
+        >
+          ✅ Approve correction
+        </button>
+      </section>
+    );
+  }
+
+  if (panelState === 'confirming') {
+    return (
+      <section className="cd-approval-panel cd-approval-panel--confirming" aria-label="Approve correction">
+        <p className="cd-approval-confirm-title">Confirm approval</p>
+        <p className="cd-approval-confirm-body">
+          Approving this correction will make it the <strong>effective clinical record</strong> for
+          this encounter. The original consultation remains on file and is not deleted.
+        </p>
+        <div className="cd-approval-actions">
+          <button
+            type="button"
+            className="cd-cf-cancel-btn"
+            onClick={handleCancelConfirm}
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            className="cd-approve-btn"
+            onClick={handleConfirmApprove}
+          >
+            ✅ Confirm — approve correction
+          </button>
+        </div>
+      </section>
+    );
+  }
+
+  if (panelState === 'approving') {
+    return (
+      <section className="cd-approval-panel" aria-label="Approve correction">
+        <p className="cd-approval-hint" aria-live="polite">Approving correction…</p>
+        <button type="button" className="cd-approve-btn" disabled>
+          Approving…
+        </button>
+      </section>
+    );
+  }
+
+  // error
+  return (
+    <section className="cd-approval-panel" aria-label="Approve correction">
+      <div className="cd-cf-error" role="alert">{errorMsg}</div>
+      <div className="cd-approval-actions">
+        <button
+          type="button"
+          className="cd-cf-cancel-btn"
+          onClick={handleCancelConfirm}
+        >
+          Cancel
+        </button>
+        <button
+          type="button"
+          className="cd-approve-btn"
+          onClick={handleConfirmApprove}
+        >
+          ✅ Retry approval
+        </button>
+      </div>
+    </section>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // ConsultationDetailPage
 // ---------------------------------------------------------------------------
 export default function ConsultationDetailPage() {
@@ -347,7 +493,8 @@ export default function ConsultationDetailPage() {
   // Phase 5C — correction editor visibility
   const [showCorrectionEditor, setShowCorrectionEditor] = useState(false);
 
-  useEffect(() => {
+  // Phase 5E — re-usable fetch function so approval can trigger a silent refresh
+  const fetchConsultation = useCallback((consultationId) => {
     let cancelled = false;
     setLoading(true);
     setNotFound(false);
@@ -355,7 +502,7 @@ export default function ConsultationDetailPage() {
     setConsultation(null);
     setShowCorrectionEditor(false);
 
-    apiGetConsultation(id)
+    apiGetConsultation(consultationId)
       .then((data) => {
         if (cancelled) return;
         if (!data.success) {
@@ -372,7 +519,11 @@ export default function ConsultationDetailPage() {
       });
 
     return () => { cancelled = true; };
-  }, [id]);
+  }, []);
+
+  useEffect(() => {
+    return fetchConsultation(id);
+  }, [id, fetchConsultation]);
 
   const c    = consultation;
   const note = c?.note ?? {};
@@ -387,6 +538,12 @@ export default function ConsultationDetailPage() {
 
   function handleCorrectionSuccess(newId) {
     navigate(`/consultation/${newId}`);
+  }
+
+  // Phase 5E — after correction approval succeeds, re-fetch in-place so all
+  // banners update (draft→approved, correction banner, approved-at meta).
+  function handleApprovalSuccess() {
+    fetchConsultation(id);
   }
 
   // ── Loading ──────────────────────────────────────────────────────────────
@@ -441,14 +598,23 @@ export default function ConsultationDetailPage() {
   }
 
   // ── Success ──────────────────────────────────────────────────────────────
-  const isApproved   = c.status === 'approved';
-  const isCorrection = Boolean(c.correctionOf);
-  const isSuperseded = Boolean(c.supersededBy);
+  const isApproved        = c.status === 'approved';
+  const isDraft           = c.status === 'draft';
+  const isCorrection      = Boolean(c.correctionOf);
+  const isSuperseded      = Boolean(c.supersededBy);
+
+  // A correction draft is eligible for approval when:
+  //  - it is a draft (not yet approved), AND
+  //  - it is a correction (correctionOf is set)
+  const isCorrectionDraft = isDraft && isCorrection;
 
   // A consultation is eligible for correction when:
   //  - it is approved, AND
   //  - it has not already been superseded by a correction
   const canCorrect = isApproved && !isSuperseded;
+
+  // An approved correction has been through the approval flow and is now effective
+  const isApprovedCorrection = isApproved && isCorrection;
 
   const consultationId =
     typeof c._id === 'object' ? c._id.toString() : (c._id ?? id);
@@ -461,7 +627,11 @@ export default function ConsultationDetailPage() {
           {c.patientId ? '← Back to patient' : '← Back'}
         </button>
         <h1 className="cd-page-title">
-          {isCorrection ? 'Correction draft' : 'Consultation'}
+          {isCorrectionDraft
+            ? 'Correction draft'
+            : isApprovedCorrection
+              ? 'Approved correction'
+              : 'Consultation'}
         </h1>
 
         {/* Correct consultation action — Phase 5C */}
@@ -477,15 +647,24 @@ export default function ConsultationDetailPage() {
         )}
       </div>
 
-      {/* Status / correction banners */}
-      {isApproved && !isSuperseded && (
+      {/* Status / correction banners — Phase 5E enhances these */}
+      {isApproved && !isSuperseded && !isCorrection && (
         <div className="cd-banner cd-banner--approved" role="status">
           ✅ Approved note
         </div>
       )}
-      {isCorrection && (
+      {isApprovedCorrection && (
+        <div className="cd-banner cd-banner--approved-correction" role="status">
+          ✅ Approved correction — this is the effective version of this encounter.
+          {' '}
+          <Link to={`/consultation/${c.correctionOf}`} className="cd-banner-link">
+            View original
+          </Link>
+        </div>
+      )}
+      {isCorrectionDraft && (
         <div className="cd-banner cd-banner--correction" role="status">
-          ✏️ This note corrects an earlier consultation.
+          ✏️ Correction draft — this is a correction of an earlier consultation.
           {' '}
           <Link to={`/consultation/${c.correctionOf}`} className="cd-banner-link">
             View original
@@ -510,6 +689,19 @@ export default function ConsultationDetailPage() {
           patientId={c.patientId}
           onCancel={() => setShowCorrectionEditor(false)}
           onSuccess={handleCorrectionSuccess}
+        />
+      )}
+
+      {/* Correction approval panel — Phase 5E
+          Only shown for a correction draft (draft + correctionOf set).
+          The CorrectionEditor and this panel are mutually exclusive:
+          the editor is for creating a new correction from an approved doc,
+          this panel is for approving an already-created correction draft. */}
+      {isCorrectionDraft && !showCorrectionEditor && (
+        <CorrectionApprovalPanel
+          consultationId={consultationId}
+          note={note}
+          onSuccess={handleApprovalSuccess}
         />
       )}
 
