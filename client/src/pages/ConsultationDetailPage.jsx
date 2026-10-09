@@ -1,29 +1,20 @@
 /**
- * ConsultationDetailPage — Phase 3C.1 / Phase 5C / Phase 5E
+ * ConsultationDetailPage — Phase 3C.1 / Phase 5C / Phase 5E / Phase 6B
  *
- * Read-only view of a single consultation fetched via:
- *   GET /api/consultations/:id
- *
- * Phase 5C adds:
- *   - "Correct consultation" action on approved, non-superseded consultations.
- *   - An inline correction editor that pre-fills the existing note.
- *   - POST /api/consultations/:id/correct on submit.
- *   - Navigation to the new draft correction on success.
- *   - Superseded/correction relationship links in banners (already existed).
- *
- * Phase 5E adds:
- *   - Correction draft state clearly distinguished from normal draft and approved.
- *   - "Approve correction" action on draft correction consultations (correctionOf ≠ null).
- *   - Inline approval confirmation panel — no window.confirm() / modal library needed.
- *   - Reuses PUT /api/consultations/:id (same as V1 review screen) — no new endpoint.
- *   - On success: refreshes the consultation in-place so banners update immediately.
- *   - On already-approved (409): shows a friendly message and re-fetches.
- *   - Superseded original clearly labelled with link to the effective correction.
+ * Phase 6B adds:
+ *   - "Export PDF" action for effective approved consultations (approved + not superseded).
+ *   - Fetches patient demographics (apiGetPatient) in parallel with the consultation
+ *     load so the PDF can include name, DOB, sex, and medical record ID.
+ *   - Uses generateConsultationPdf() from services/pdfExport.js (jsPDF, client-side).
+ *   - Approved corrections are exportable; superseded originals are not.
+ *   - Export does not mutate any consultation data.
  */
 
 import { useEffect, useReducer, useState, useCallback } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { apiGetConsultation, apiCreateCorrection, apiApproveConsultation } from '../services/api/consultations.js';
+import { apiGetPatient } from '../services/api/patients.js';
+import { generateConsultationPdf } from '../services/pdfExport.js';
 import ChangeSummaryPanel from '../components/consultation/ChangeSummaryPanel.jsx';
 
 // ---------------------------------------------------------------------------
@@ -493,6 +484,13 @@ export default function ConsultationDetailPage() {
   // Phase 5C — correction editor visibility
   const [showCorrectionEditor, setShowCorrectionEditor] = useState(false);
 
+  // Phase 6B — patient demographics for PDF export
+  const [patient,      setPatient]      = useState(null);
+
+  // Phase 6B — PDF export state
+  const [exporting,    setExporting]    = useState(false);
+  const [exportError,  setExportError]  = useState('');
+
   // Phase 5E — re-usable fetch function so approval can trigger a silent refresh
   const fetchConsultation = useCallback((consultationId) => {
     let cancelled = false;
@@ -501,6 +499,7 @@ export default function ConsultationDetailPage() {
     setError('');
     setConsultation(null);
     setShowCorrectionEditor(false);
+    setExportError('');
 
     apiGetConsultation(consultationId)
       .then((data) => {
@@ -509,6 +508,16 @@ export default function ConsultationDetailPage() {
           setNotFound(true);
         } else {
           setConsultation(data.consultation);
+          // Phase 6B — fetch patient demographics in parallel for PDF export.
+          // A failure here is non-blocking; the page renders fine without it.
+          const pid = data.consultation?.patientId;
+          if (pid) {
+            apiGetPatient(pid)
+              .then((pData) => {
+                if (!cancelled && pData?.success) setPatient(pData.patient ?? pData.data ?? null);
+              })
+              .catch(() => { /* patient fetch failure is non-fatal */ });
+          }
         }
       })
       .catch(() => {
@@ -544,6 +553,20 @@ export default function ConsultationDetailPage() {
   // banners update (draft→approved, correction banner, approved-at meta).
   function handleApprovalSuccess() {
     fetchConsultation(id);
+  }
+
+  // Phase 6B — PDF export
+  async function handleExport() {
+    if (exporting) return;
+    setExporting(true);
+    setExportError('');
+    try {
+      generateConsultationPdf(consultation, patient);
+    } catch (err) {
+      setExportError('Could not generate PDF — ' + (err?.message ?? 'unknown error'));
+    } finally {
+      setExporting(false);
+    }
   }
 
   // ── Loading ──────────────────────────────────────────────────────────────
@@ -616,6 +639,10 @@ export default function ConsultationDetailPage() {
   // An approved correction has been through the approval flow and is now effective
   const isApprovedCorrection = isApproved && isCorrection;
 
+  // Phase 6B — A consultation can be exported when it is approved AND not superseded.
+  // An approved correction (effective version) is exportable; a superseded original is not.
+  const canExport = isApproved && !isSuperseded;
+
   const consultationId =
     typeof c._id === 'object' ? c._id.toString() : (c._id ?? id);
 
@@ -645,7 +672,27 @@ export default function ConsultationDetailPage() {
             ✏️ Correct consultation
           </button>
         )}
+
+        {/* Export PDF action — Phase 6B */}
+        {canExport && (
+          <button
+            type="button"
+            className="cd-export-btn"
+            onClick={handleExport}
+            disabled={exporting}
+            aria-label="Export consultation as PDF"
+          >
+            {exporting ? 'Generating PDF…' : '⬇ Export PDF'}
+          </button>
+        )}
       </div>
+
+      {/* Phase 6B — export error (non-blocking, shown below header) */}
+      {exportError && (
+        <div className="cd-banner cd-banner--export-error" role="alert">
+          {exportError}
+        </div>
+      )}
 
       {/* Status / correction banners — Phase 5E enhances these */}
       {isApproved && !isSuperseded && !isCorrection && (

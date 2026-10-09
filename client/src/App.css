@@ -4996,3 +4996,43 @@
 @media (max-width: 600px) {
   .p360-wc-section { padding-top: 14px; }
 }
+
+/* ============================================================
+   Phase 6B — PDF Export
+   Prefix: cd-export-*
+   ============================================================ */
+
+/* ── Export PDF button — blue/neutral, sits in the page header row ── */
+.cd-export-btn {
+  appearance: none;
+  border: 1px solid var(--brand-border, #4a90d9);
+  border-radius: var(--radius-md);
+  background: var(--brand-light, #eaf3fc);
+  color: var(--brand, #1a6bbf);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 7px 14px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.12s, border-color 0.12s;
+}
+.cd-export-btn:hover:not(:disabled) {
+  background: var(--brand-ring, #c7dff5);
+  border-color: var(--brand, #1a6bbf);
+}
+.cd-export-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* ── Export error banner ── */
+.cd-banner--export-error {
+  background: var(--red-bg, #fff0f0);
+  border: 1px solid var(--red-border, #f5c2c2);
+  color: var(--red, #c0392b);
+}
+
+@media (max-width: 600px) {
+  .cd-export-btn { width: 100%; text-align: center; margin-left: 0; margin-top: 8px; }
+}
