@@ -561,7 +561,7 @@ export default function ConsultationDetailPage() {
     setExporting(true);
     setExportError('');
     try {
-      generateConsultationPdf(consultation, patient);
+      await generateConsultationPdf(consultation, patient);
     } catch (err) {
       setExportError('Could not generate PDF — ' + (err?.message ?? 'unknown error'));
     } finally {
@@ -680,7 +680,7 @@ export default function ConsultationDetailPage() {
             className="cd-export-btn"
             onClick={handleExport}
             disabled={exporting}
-            aria-label="Export consultation as PDF"
+            aria-label="Export PDF"
           >
             {exporting ? 'Generating PDF…' : '⬇ Export PDF'}
           </button>

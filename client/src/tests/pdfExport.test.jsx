@@ -43,30 +43,32 @@
 import { describe, test, expect, vi, beforeEach } from 'vitest';
 
 // ---------------------------------------------------------------------------
-// Mock jsPDF before importing the module under test
+// Mock jsPDF — use vi.hoisted() so the mockDoc object is available both
+// inside the hoisted vi.mock factory AND in test assertions.
 // ---------------------------------------------------------------------------
 
-// Capture all text() calls so we can assert on PDF content
-const textCalls   = [];
-const savedFiles  = [];
-
-const mockDoc = {
-  setFontSize:    vi.fn(),
-  setFont:        vi.fn(),
-  setTextColor:   vi.fn(),
-  setDrawColor:   vi.fn(),
-  setLineWidth:   vi.fn(),
-  line:           vi.fn(),
-  text:           vi.fn((...args) => textCalls.push(args)),
-  addPage:        vi.fn(),
-  setPage:        vi.fn(),
-  getNumberOfPages: vi.fn(() => 1),
-  splitTextToSize:  vi.fn((str, _w) => [str]), // always returns one line
-  save:           vi.fn((filename) => savedFiles.push(filename)),
-};
+const { mockDoc, textCalls, savedFiles } = vi.hoisted(() => {
+  const textCalls  = [];
+  const savedFiles = [];
+  const mockDoc = {
+    setFontSize:      vi.fn(),
+    setFont:          vi.fn(),
+    setTextColor:     vi.fn(),
+    setDrawColor:     vi.fn(),
+    setLineWidth:     vi.fn(),
+    line:             vi.fn(),
+    text:             vi.fn((...args) => textCalls.push(args)),
+    addPage:          vi.fn(),
+    setPage:          vi.fn(),
+    getNumberOfPages: vi.fn(() => 1),
+    splitTextToSize:  vi.fn((str, _w) => [str]),
+    save:             vi.fn((filename) => savedFiles.push(filename)),
+  };
+  return { mockDoc, textCalls, savedFiles };
+});
 
 vi.mock('jspdf', () => ({
-  jsPDF: vi.fn(() => mockDoc),
+  jsPDF: vi.fn(function JsPDFMock() { return mockDoc; }),
 }));
 
 // Import AFTER mock is set up
@@ -74,6 +76,7 @@ import {
   generateConsultationPdf,
   buildFilename,
 } from '../services/pdfExport.js';
+import { jsPDF } from 'jspdf';
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -123,10 +126,11 @@ function makePatient(overrides = {}) {
 // ---------------------------------------------------------------------------
 
 beforeEach(() => {
-  textCalls.length   = 0;
-  savedFiles.length  = 0;
+  textCalls.length  = 0;
+  savedFiles.length = 0;
   vi.clearAllMocks();
-  // Re-attach the text spy after clearAllMocks
+  // Restore named-function implementations after vi.clearAllMocks()
+  jsPDF.mockImplementation(function JsPDFMock() { return mockDoc; });
   mockDoc.text.mockImplementation((...args) => textCalls.push(args));
   mockDoc.save.mockImplementation((f) => savedFiles.push(f));
   mockDoc.splitTextToSize.mockImplementation((str, _w) => [str]);
@@ -328,7 +332,7 @@ describe('25–26. special characters and long notes', () => {
     const c = makeApprovedConsultation({
       note: {
         chief_complaint: 'Cough & sore throat <test> "quoted"',
-        assessment:      'O\'Brien's syndrome — rule out pneumonia',
+        assessment:      "O'Brien's syndrome — rule out pneumonia",
         follow_up:       'Résumé with doctor in 2 weeks',
         symptoms:        ['fever', 'chills', 'nasal congestion'],
         medications_mentioned: ['amoxicillin 500mg', 'paracetamol'],

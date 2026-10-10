@@ -41,6 +41,25 @@ vi.mock('../services/api/patients.js', () => ({
   apiGetPatientOverview:      vi.fn(),
 }));
 
+// Phase 6B — mock pdfExport so tests can control and inspect PDF generation
+vi.mock('../services/pdfExport.js', () => ({
+  generateConsultationPdf: vi.fn(() => 'consultation-2026-09-01.pdf'),
+}));
+
+// Phase 6B — mock jspdf so pdfExport.js can be imported in jsdom without errors
+vi.mock('jspdf', () => ({
+  jsPDF: vi.fn(function JsPDFMock() {
+    return {
+      setFontSize: vi.fn(), setFont: vi.fn(), setTextColor: vi.fn(),
+      setDrawColor: vi.fn(), setLineWidth: vi.fn(), line: vi.fn(),
+      text: vi.fn(), addPage: vi.fn(), setPage: vi.fn(),
+      getNumberOfPages: vi.fn(() => 1),
+      splitTextToSize: vi.fn((s) => [s]),
+      save: vi.fn(),
+    };
+  }),
+}));
+
 // Defensive: prevent apiFetch bleed from other test files
 vi.mock('../api.js', () => ({
   apiFetch:       vi.fn(),
@@ -56,6 +75,7 @@ import {
   apiGetPatientConsultations,
   apiGetPatientOverview,
 } from '../services/api/patients.js';
+import { generateConsultationPdf } from '../services/pdfExport.js';
 
 // ---------------------------------------------------------------------------
 // Components under test
@@ -148,6 +168,11 @@ function renderPatientProfile(patientId = PATIENT_ID) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // Phase 6B: default apiGetPatient to a safe non-blocking resolve so the
+  // background patient fetch in fetchConsultation doesn't leak into unrelated tests.
+  apiGetPatient.mockResolvedValue({ success: true, patient: null });
+  // Default generateConsultationPdf to succeed (returns a filename string)
+  generateConsultationPdf.mockReturnValue('consultation-2026-09-01.pdf');
 });
 
 // ---------------------------------------------------------------------------
@@ -1081,5 +1106,261 @@ describe('21. correction does not appear as a new encounter', () => {
       expect(screen.getByRole('heading', { name: 'Correction draft' })).toBeInTheDocument()
     );
     expect(apiGetConsultation).toHaveBeenCalledWith(CORRECTED_ID);
+  });
+});
+
+// ===========================================================================
+// Phase 6B — PDF Export tests
+// ===========================================================================
+//
+// generateConsultationPdf is mocked at the module level so no real PDF is
+// generated. Tests assert on button visibility, API wiring, error handling,
+// and that consultation data is not mutated.
+//
+// ---------------------------------------------------------------------------
+
+const PATIENT_FIXTURE = {
+  _id:             PATIENT_ID,
+  firstName:       'Alice',
+  lastName:        'Smith',
+  dateOfBirth:     '1990-05-15T00:00:00.000Z',
+  biologicalSex:   'female',
+  medicalRecordId: 'MR001',
+  phone:           '0400000001',
+};
+
+// Helper: render an approved consultation and wait for it to load
+async function renderApprovedForExport(overrides = {}) {
+  apiGetConsultation.mockResolvedValue({
+    success: true,
+    consultation: makeConsultation(overrides),
+  });
+  apiGetPatient.mockResolvedValue({ success: true, patient: PATIENT_FIXTURE });
+  renderDetailPage();
+  await waitFor(() => expect(screen.getByText('Persistent cough')).toBeInTheDocument());
+}
+
+// ---------------------------------------------------------------------------
+// 22 — Export action visibility
+// ---------------------------------------------------------------------------
+describe('22. Phase 6B — Export PDF button visibility', () => {
+  test('22a. "Export PDF" button is shown for an effective approved consultation', async () => {
+    await renderApprovedForExport();
+    expect(
+      screen.getByRole('button', { name: /export pdf/i })
+    ).toBeInTheDocument();
+  });
+
+  test('22b. "Export PDF" button is hidden for a draft consultation', async () => {
+    apiGetConsultation.mockResolvedValue({
+      success: true,
+      consultation: makeConsultation({ status: 'draft', approvedAt: null }),
+    });
+    renderDetailPage();
+    await waitFor(() => expect(screen.getByText('Persistent cough')).toBeInTheDocument());
+
+    expect(
+      screen.queryByRole('button', { name: /export pdf/i })
+    ).not.toBeInTheDocument();
+  });
+
+  test('22c. "Export PDF" button is hidden for a superseded original', async () => {
+    apiGetConsultation.mockResolvedValue({
+      success: true,
+      consultation: makeConsultation({ supersededBy: 'dddddddddddddddddddddddd' }),
+    });
+    renderDetailPage();
+    await waitFor(() => expect(screen.getByText('Persistent cough')).toBeInTheDocument());
+
+    expect(
+      screen.queryByRole('button', { name: /export pdf/i })
+    ).not.toBeInTheDocument();
+  });
+
+  test('22d. "Export PDF" button IS shown for an approved correction (effective version)', async () => {
+    apiGetConsultation.mockResolvedValue({
+      success: true,
+      consultation: makeConsultation({
+        correctionOf: 'eeeeeeeeeeeeeeeeeeeeeeee',
+        supersededBy: null,
+        status:       'approved',
+      }),
+    });
+    renderDetailPage();
+    await waitFor(() => expect(screen.getByText('Persistent cough')).toBeInTheDocument());
+
+    expect(
+      screen.getByRole('button', { name: /export pdf/i })
+    ).toBeInTheDocument();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 23 — Export API call and patient data
+// ---------------------------------------------------------------------------
+describe('23. Phase 6B — Export PDF calls generateConsultationPdf', () => {
+  test('23a. clicking Export PDF calls generateConsultationPdf', async () => {
+    await renderApprovedForExport();
+    await userEvent.click(screen.getByRole('button', { name: /export pdf/i }));
+
+    expect(generateConsultationPdf).toHaveBeenCalledTimes(1);
+  });
+
+  test('23b. generateConsultationPdf is called with the consultation object', async () => {
+    await renderApprovedForExport();
+    await userEvent.click(screen.getByRole('button', { name: /export pdf/i }));
+
+    const [passedConsultation] = generateConsultationPdf.mock.calls[0];
+    expect(passedConsultation).toMatchObject({
+      status: 'approved',
+      note:   expect.objectContaining({ chief_complaint: 'Persistent cough' }),
+    });
+  });
+
+  test('23c. generateConsultationPdf is called with the patient object when available', async () => {
+    await renderApprovedForExport();
+    await waitFor(() => expect(apiGetPatient).toHaveBeenCalled());
+
+    await userEvent.click(screen.getByRole('button', { name: /export pdf/i }));
+
+    const [, passedPatient] = generateConsultationPdf.mock.calls[0];
+    expect(passedPatient).toMatchObject({ firstName: 'Alice', lastName: 'Smith' });
+  });
+
+  test('23d. apiGetPatient is called with the patientId from the consultation', async () => {
+    await renderApprovedForExport();
+    await waitFor(() => expect(apiGetPatient).toHaveBeenCalled());
+
+    expect(apiGetPatient).toHaveBeenCalledWith(PATIENT_ID);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 24 — Duplicate submission prevention
+// ---------------------------------------------------------------------------
+describe('24. Phase 6B — duplicate export submission is prevented', () => {
+  test('24a. Export PDF button is disabled while generation is running', async () => {
+    // Mock never resolves so the button stays in "generating" state
+    generateConsultationPdf.mockImplementation(() => new Promise(() => {}));
+
+    await renderApprovedForExport();
+    const btn = screen.getByRole('button', { name: /export pdf/i });
+
+    await userEvent.click(btn);
+
+    // Button should now be disabled and show in-progress text
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /generating pdf/i })).toBeDisabled()
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 25 — Export error handling
+// ---------------------------------------------------------------------------
+describe('25. Phase 6B — export error is handled gracefully', () => {
+  test('25a. generateConsultationPdf failure shows an error banner', async () => {
+    generateConsultationPdf.mockImplementation(() => {
+      throw new Error('jsPDF rendering failed');
+    });
+
+    await renderApprovedForExport();
+    await userEvent.click(screen.getByRole('button', { name: /export pdf/i }));
+
+    await waitFor(() =>
+      expect(screen.getByRole('alert')).toBeInTheDocument()
+    );
+    expect(screen.getByRole('alert')).toHaveTextContent(/could not generate pdf/i);
+  });
+
+  test('25b. page content remains intact after an export error', async () => {
+    generateConsultationPdf.mockImplementation(() => { throw new Error('fail'); });
+
+    await renderApprovedForExport();
+    await userEvent.click(screen.getByRole('button', { name: /export pdf/i }));
+
+    await waitFor(() => expect(screen.getByRole('alert')).toBeInTheDocument());
+
+    // Clinical note and patient info still visible
+    expect(screen.getByText('Persistent cough')).toBeInTheDocument();
+    expect(screen.getByText('approved')).toBeInTheDocument();
+  });
+
+  test('25c. export error does not navigate away from the consultation', async () => {
+    generateConsultationPdf.mockImplementation(() => { throw new Error('fail'); });
+
+    await renderApprovedForExport();
+    await userEvent.click(screen.getByRole('button', { name: /export pdf/i }));
+
+    await waitFor(() => expect(screen.getByRole('alert')).toBeInTheDocument());
+
+    // Still on the detail page — heading still shows
+    expect(screen.getByRole('heading', { name: 'Consultation' })).toBeInTheDocument();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 26 — Export does not mutate consultation data
+// ---------------------------------------------------------------------------
+describe('26. Phase 6B — export does not mutate consultation or create an encounter', () => {
+  test('26a. apiGetConsultation is not called again after clicking Export PDF', async () => {
+    await renderApprovedForExport();
+    const callsBefore = apiGetConsultation.mock.calls.length;
+
+    await userEvent.click(screen.getByRole('button', { name: /export pdf/i }));
+
+    // No extra API calls triggered
+    expect(apiGetConsultation.mock.calls.length).toBe(callsBefore);
+  });
+
+  test('26b. apiCreateCorrection is not called when exporting', async () => {
+    await renderApprovedForExport();
+    await userEvent.click(screen.getByRole('button', { name: /export pdf/i }));
+
+    expect(apiCreateCorrection).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 27 — Existing consultation detail behavior remains intact
+// ---------------------------------------------------------------------------
+describe('27. Phase 6B — existing behavior is unaffected', () => {
+  test('27a. "Correct consultation" button still present alongside Export PDF', async () => {
+    await renderApprovedForExport();
+
+    expect(
+      screen.getByRole('button', { name: /correct (this )?consultation/i })
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: /export pdf/i })
+    ).toBeInTheDocument();
+  });
+
+  test('27b. clinical note fields still render correctly when export is available', async () => {
+    await renderApprovedForExport();
+
+    expect(screen.getByText('Likely viral URTI')).toBeInTheDocument();
+    expect(screen.getByText('Return in 1 week')).toBeInTheDocument();
+  });
+
+  test('27c. patient fetch failure is non-blocking — page loads without patient data', async () => {
+    apiGetConsultation.mockResolvedValue({
+      success: true,
+      consultation: makeConsultation(),
+    });
+    // Patient fetch fails
+    apiGetPatient.mockRejectedValue(new Error('Patient service unavailable'));
+
+    renderDetailPage();
+
+    // Page still loads with consultation content
+    await waitFor(() =>
+      expect(screen.getByText('Persistent cough')).toBeInTheDocument()
+    );
+
+    // Export PDF button is still shown (patient data optional)
+    expect(
+      screen.getByRole('button', { name: /export pdf/i })
+    ).toBeInTheDocument();
   });
 });
