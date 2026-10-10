@@ -680,7 +680,6 @@ export default function ConsultationDetailPage() {
             className="cd-export-btn"
             onClick={handleExport}
             disabled={exporting}
-            aria-label="Export PDF"
           >
             {exporting ? 'Generating PDF…' : '⬇ Export PDF'}
           </button>
