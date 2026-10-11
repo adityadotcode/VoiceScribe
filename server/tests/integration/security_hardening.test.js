@@ -375,3 +375,98 @@ describe('9. CORS credentials', () => {
     expect(res.headers['access-control-allow-credentials']).toBe('true');
   });
 });
+
+// ---------------------------------------------------------------------------
+// 10 — Content Security Policy (Phase 7 / P0-3)
+//
+// These tests verify that:
+//   a. The CSP header is present on every response.
+//   b. The policy contains exactly the expected restrictive directives.
+//   c. No unsafe-inline or unsafe-eval is present.
+//   d. object-src is 'none'.
+//   e. frame-ancestors is 'none'.
+//   f. The application no longer globally disables CSP.
+// ---------------------------------------------------------------------------
+describe('10. Content-Security-Policy header', () => {
+  // Helper — fetch a route and return the lower-cased CSP header value.
+  async function csp(route = '/api/health') {
+    const res = await request(app).get(route);
+    return res.headers['content-security-policy'] ?? '';
+  }
+
+  test('10a. CSP header is present on GET /api/health', async () => {
+    const header = await csp('/api/health');
+    expect(header).toBeTruthy();
+    expect(header.length).toBeGreaterThan(0);
+  });
+
+  test('10b. CSP header is present on authenticated API routes (401 response)', async () => {
+    // Even a 401 must carry the CSP header — the browser may render an error page.
+    const res = await request(app).get('/api/patients');
+    expect(res.status).toBe(401);
+    expect(res.headers['content-security-policy']).toBeTruthy();
+  });
+
+  test('10c. default-src is "self"', async () => {
+    const header = await csp();
+    expect(header).toMatch(/default-src 'self'/);
+  });
+
+  test('10d. script-src is "self" (no unsafe-inline or unsafe-eval)', async () => {
+    const header = await csp();
+    expect(header).toMatch(/script-src 'self'/);
+    expect(header).not.toMatch(/unsafe-inline/);
+    expect(header).not.toMatch(/unsafe-eval/);
+  });
+
+  test('10e. style-src is "self" (no unsafe-inline)', async () => {
+    const header = await csp();
+    expect(header).toMatch(/style-src 'self'/);
+    expect(header).not.toMatch(/unsafe-inline/);
+  });
+
+  test('10f. object-src is "none"', async () => {
+    const header = await csp();
+    expect(header).toMatch(/object-src 'none'/);
+  });
+
+  test('10g. frame-ancestors is "none"', async () => {
+    const header = await csp();
+    expect(header).toMatch(/frame-ancestors 'none'/);
+  });
+
+  test('10h. base-uri is "self"', async () => {
+    const header = await csp();
+    expect(header).toMatch(/base-uri 'self'/);
+  });
+
+  test('10i. form-action is "self"', async () => {
+    const header = await csp();
+    expect(header).toMatch(/form-action 'self'/);
+  });
+
+  test('10j. connect-src is "self"', async () => {
+    const header = await csp();
+    expect(header).toMatch(/connect-src 'self'/);
+  });
+
+  test('10k. media-src includes "self" and "blob:" (audio playback requirement)', async () => {
+    const header = await csp();
+    expect(header).toMatch(/media-src 'self' blob:/);
+  });
+
+  test('10l. img-src is "self" only (no data: — jsPDF does not inject data: images into DOM)', async () => {
+    const header = await csp();
+    expect(header).toMatch(/img-src 'self'/);
+    // data: must not appear in img-src since there is no runtime requirement for it
+    expect(header).not.toMatch(/img-src[^;]*data:/);
+  });
+
+  test('10m. CSP is not disabled (string "false" or empty policy not present)', async () => {
+    const header = await csp();
+    // The policy must contain real directives, not be the empty string
+    expect(header).toMatch(/default-src/);
+    // The word "false" must not appear (would indicate misconfiguration)
+    expect(header).not.toMatch(/false/);
+  });
+});

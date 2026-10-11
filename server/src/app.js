@@ -11,10 +11,49 @@ const app = express();
 
 // ── Security headers ──────────────────────────────────────────────────────
 // helmet sets a conservative set of HTTP security headers.
-// contentSecurityPolicy is disabled here because the React SPA uses inline
-// scripts injected by Vite; a proper CSP will be configured in Phase 7
-// (security hardening) once the frontend build pipeline is finalised.
-app.use(helmet({ contentSecurityPolicy: false }));
+//
+// Content Security Policy — production-ready, no unsafe-inline or unsafe-eval.
+//
+// Verified against the current production build (client/dist):
+//   • index.html has zero inline <script> or <style> blocks — Vite externalises
+//     everything to hashed asset files in /assets/.
+//   • All JS and CSS are same-origin (/assets/*).
+//   • No external CDN resources (no googleapis, fonts, cdn.*, etc.).
+//   • blob: is required for AudioRecorder: URL.createObjectURL(audioBlob) creates
+//     a blob: URL used as the <audio> playback src.
+//   • jsPDF calls doc.save() which triggers a browser download via Blob internally.
+//     It does NOT inject data: URLs into DOM image elements, so img-src 'self'
+//     (no data:) is correct.
+//   • No Web Workers, Service Workers, or SharedWorkers are used anywhere.
+//   • upgradeInsecureRequests is intentionally omitted: behind a load balancer
+//     the server may receive plain HTTP from the balancer; including this
+//     directive can cause redirect loops. TLS termination is handled at the
+//     CloudFront / ALB layer.
+//
+// The X-Frame-Options: SAMEORIGIN header is also set by helmet's default
+// frameguard middleware. frame-ancestors 'none' in CSP supersedes it for
+// browsers that understand CSP level 2+, so both are present for maximum
+// compatibility.
+app.use(helmet({
+  contentSecurityPolicy: {
+    useDefaults: false,
+    directives: {
+      defaultSrc:     ["'self'"],
+      scriptSrc:      ["'self'"],
+      styleSrc:       ["'self'"],
+      imgSrc:         ["'self'"],
+      fontSrc:        ["'self'"],
+      connectSrc:     ["'self'"],
+      // blob: required for AudioRecorder audio playback
+      // (URL.createObjectURL → <audio src="blob:...">)
+      mediaSrc:       ["'self'", 'blob:'],
+      objectSrc:      ["'none'"],
+      baseUri:        ["'self'"],
+      formAction:     ["'self'"],
+      frameAncestors: ["'none'"],
+    },
+  },
+}));
 
 // ── CORS ──────────────────────────────────────────────────────────────────
 // credentials: true is required so the browser sends the HTTP-only refresh
