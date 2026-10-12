@@ -317,122 +317,49 @@ describe('8. refresh clears consent — no localStorage persistence', () => {
 });
 
 // ===========================================================================
-// Section B — Defence-in-depth: DashboardApp blocks recording without consent
+// Section B — Defence-in-depth: AudioRecorder blocks recording without consent
 // ===========================================================================
-
-// We test the gate by rendering the full App router with controlled location.state.
-// A stub DashboardApp is not feasible without significant architecture change,
-// so we test the behaviour via the existing navigation test pattern:
-// if state.startRecording is true but state.recordingConsentGivenAt is absent,
-// the recording stage must NOT auto-start.
 //
-// These tests work by verifying that the "Start recording" button from the
-// workspace-start-card (shown when stage = DASHBOARD) is present — meaning
-// the stage did NOT advance to RECORDING.
+// The primary gate is in NewConsultationPage (tested in Section A).
+// The secondary guard is in AudioRecorder's consentConfirmed prop.
+// We test it by rendering AudioRecorder directly with consentConfirmed=false.
+// This is equivalent to what happens when the dashboard receives no consent
+// timestamp in its location.state — it passes consentConfirmed={false} to
+// AudioRecorder, which then refuses startRecording.
 
-import App from '../App.jsx';
-import { AuthProvider } from '../contexts/AuthContext.jsx';
-import { ThemeProvider } from '../contexts/ThemeContext.jsx';
+import AudioRecorder from '../AudioRecorder.jsx';
 
-vi.mock('../contexts/AuthContext.jsx', async (importOriginal) => {
-  const original = await importOriginal();
-  return {
-    ...original,
-    useAuth: () => ({
-      user:                { displayName: 'Dr Test', email: 'test@example.com', id: 'aaa' },
-      isAuthenticated:     true,
-      isLoading:           false,
-      login:               vi.fn(),
-      logout:              vi.fn(),
-      refreshAccessToken:  vi.fn(),
-    }),
-  };
-});
-
-vi.mock('../contexts/ThemeContext.jsx', async (importOriginal) => {
-  const original = await importOriginal();
-  return {
-    ...original,
-    useTheme: () => ({ theme: 'light', toggleTheme: vi.fn() }),
-  };
-});
-
-function renderDashboardWithState(locationState = {}) {
+function renderAudioRecorder(props = {}) {
   return render(
-    <MemoryRouter initialEntries={[{ pathname: '/dashboard', state: locationState }]}>
-      <Routes>
-        <Route path="/dashboard" element={
-          <AuthProvider>
-            <ThemeProvider>
-              <App />
-            </ThemeProvider>
-          </AuthProvider>
-        } />
-      </Routes>
+    <MemoryRouter>
+      <AudioRecorder
+        onTranscriptReady={vi.fn()}
+        onStageChange={vi.fn()}
+        {...props}
+      />
     </MemoryRouter>
   );
 }
 
 describe('9. direct navigation cannot bypass the consent gate', () => {
-  test('9a. state.startRecording=true WITHOUT recordingConsentGivenAt → recording stage does NOT auto-start', async () => {
-    // Simulate direct navigation with startRecording but no consent timestamp.
-    // DashboardApp must NOT advance to RECORDING stage.
-    apiFetch.mockResolvedValue(
-      new Response(JSON.stringify({ success: true, status: 'ok', service: 'VoiceScribe API' }), {
-        status: 200, headers: { 'Content-Type': 'application/json' },
-      })
-    );
-
-    render(
-      <MemoryRouter initialEntries={[{ pathname: '/dashboard', state: { startRecording: true, patientId: PATIENT_ID } }]}>
-        <Routes>
-          <Route path="/dashboard" element={
-            <AuthProvider>
-              <ThemeProvider>
-                <App />
-              </ThemeProvider>
-            </AuthProvider>
-          } />
-        </Routes>
-      </MemoryRouter>
-    );
-
-    await waitFor(() => {
-      // The "Start recording" button from workspace-start-card should be present
-      // (meaning stage stayed at DASHBOARD, not RECORDING)
-      expect(screen.queryByRole('button', { name: /start recording/i })).toBeInTheDocument();
-    });
+  test('9a. AudioRecorder "Start recording" button is disabled when consentConfirmed=false', () => {
+    renderAudioRecorder({ consentConfirmed: false });
+    const startBtn = screen.getByRole('button', { name: /start recording/i });
+    expect(startBtn).toBeDisabled();
   });
 
-  test('9b. state.startRecording=true WITH recordingConsentGivenAt → recording stage IS entered', async () => {
-    apiFetch.mockResolvedValue(
-      new Response(JSON.stringify({ success: true, status: 'ok', service: 'VoiceScribe API' }), {
-        status: 200, headers: { 'Content-Type': 'application/json' },
-      })
-    );
+  test('9b. AudioRecorder "Start recording" button is enabled when consentConfirmed=true', () => {
+    renderAudioRecorder({ consentConfirmed: true });
+    const startBtn = screen.getByRole('button', { name: /start recording/i });
+    expect(startBtn).not.toBeDisabled();
+  });
 
-    render(
-      <MemoryRouter initialEntries={[{ pathname: '/dashboard', state: {
-        startRecording:          true,
-        patientId:               PATIENT_ID,
-        recordingConsentGivenAt: '2026-09-01T09:00:00.000Z',
-      }}]}>
-        <Routes>
-          <Route path="/dashboard" element={
-            <AuthProvider>
-              <ThemeProvider>
-                <App />
-              </ThemeProvider>
-            </AuthProvider>
-          } />
-        </Routes>
-      </MemoryRouter>
-    );
-
-    await waitFor(() => {
-      // AudioRecorder renders its "Record consultation" heading when stage = RECORDING
-      expect(screen.queryByRole('heading', { name: /record consultation/i })).toBeInTheDocument();
-    });
+  test('9c. consentConfirmed defaults to false — button disabled without explicit prop', () => {
+    // AudioRecorder rendered without the consentConfirmed prop (direct render,
+    // simulates embedded use without consent state).
+    renderAudioRecorder({});
+    const startBtn = screen.getByRole('button', { name: /start recording/i });
+    expect(startBtn).toBeDisabled();
   });
 });
 

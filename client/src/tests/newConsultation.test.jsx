@@ -279,11 +279,22 @@ describe('6. Start button disabled before selection, enabled after', () => {
     expect(btn).toBeDisabled();
   });
 
-  test('Start button is enabled after a patient is selected', async () => {
+  test('Start button is enabled after a patient is selected AND consent is confirmed', async () => {
     renderPage();
     await act(async () => { vi.advanceTimersByTime(400); });
     await waitFor(() => expect(screen.getByText('Smith, Alice')).toBeInTheDocument());
     await userEvent.click(screen.getByText('Smith, Alice'));
+
+    // Phase 7 / P0-1: patient selected alone is not enough — consent must also be confirmed
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /start consultation/i })).toBeDisabled();
+    });
+
+    // Confirm consent
+    await waitFor(() =>
+      expect(screen.getByRole('checkbox', { name: /patient has.*consent/i })).toBeInTheDocument()
+    );
+    await userEvent.click(screen.getByRole('checkbox', { name: /patient has.*consent/i }));
 
     await waitFor(() => {
       expect(screen.getByRole('button', { name: /start consultation/i })).not.toBeDisabled();
@@ -577,6 +588,12 @@ describe('9. Phase 6A — comparison renders in pre-consultation context', () =>
 describe('10. Phase 6A — existing new-consultation flow is unaffected', () => {
   test('Start consultation button still navigates to /dashboard with patientId', async () => {
     await selectAliceAndWaitForContext();
+
+    // Phase 7 / P0-1: must confirm consent before Start is enabled
+    await waitFor(() =>
+      expect(screen.getByRole('checkbox', { name: /patient has.*consent/i })).toBeInTheDocument()
+    );
+    await userEvent.click(screen.getByRole('checkbox', { name: /patient has.*consent/i }));
 
     await userEvent.click(
       screen.getByRole('button', { name: /start consultation/i })
