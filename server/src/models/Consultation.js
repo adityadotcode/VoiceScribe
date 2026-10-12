@@ -135,6 +135,39 @@ const ConsultationSchema = new mongoose.Schema(
       type:    mongoose.Schema.Types.Mixed,
       default: {},
     },
+
+    // ── Phase 7 / P0-1 — Recording consent ───────────────────────────────
+    // Timestamp captured in the browser when the doctor explicitly confirms
+    // that the patient has been informed and has agreed to the audio recording
+    // and AI-assisted processing.
+    //
+    // Lifecycle:
+    //   • Null on manual (non-recorded) consultations — no recording took place.
+    //   • Set to the ISO timestamp supplied by the frontend at the moment the
+    //     doctor checks the consent confirmation in NewConsultationPage,
+    //     before the AudioRecorder is mounted and before any microphone access.
+    //   • Persisted on the first consultation create (POST), never on updates
+    //     (PUT does not accept or modify this field — createConsultation only).
+    //
+    // Trust level:
+    //   • The timestamp originates in the browser.  It accurately represents
+    //     when the doctor confirmed consent in the UI but cannot be treated as
+    //     independently server-verified evidence of the exact wall-clock time.
+    //   • The accompanying userId (req.user.id) is server-verified via JWT.
+    //   • Null default ensures old V1 documents remain valid without migration.
+    recordingConsentGivenAt: {
+      type:    Date,
+      default: null,
+    },
+
+    // userId of the authenticated doctor who confirmed the recording consent.
+    // Always set from req.user.id (JWT) — never from the client body.
+    // Null on manual consultations and V1 documents.
+    recordingConsentConfirmedBy: {
+      type:    mongoose.Schema.Types.ObjectId,
+      ref:     'User',
+      default: null,
+    },
   },
   {
     // Adds createdAt and updatedAt automatically

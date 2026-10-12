@@ -5036,3 +5036,44 @@
 @media (max-width: 600px) {
   .cd-export-btn { width: 100%; text-align: center; margin-left: 0; margin-top: 8px; }
 }
+
+/* ============================================================
+   Phase 7 / P0-1 — Recording consent gate
+   Prefix: nc-consent-*
+   ============================================================ */
+
+/* Container for the consent confirmation, directly below patient selection */
+.nc-consent-gate {
+  background: var(--amber-bg, #fff8ec);
+  border: 1px solid var(--amber-border, #f0c060);
+  border-radius: var(--radius-md, 6px);
+  padding: 12px 14px;
+  margin-top: 12px;
+}
+
+/* The label wraps both the checkbox and the statement text */
+.nc-consent-label {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  cursor: pointer;
+  line-height: 1.5;
+}
+
+.nc-consent-checkbox {
+  margin-top: 3px;   /* optical alignment with first text line */
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  accent-color: var(--amber, #c78c00);
+  cursor: pointer;
+}
+
+.nc-consent-text {
+  font-size: 13px;
+  color: var(--text, #333);
+}
+
+@media (max-width: 600px) {
+  .nc-consent-gate { padding: 10px 12px; }
+}

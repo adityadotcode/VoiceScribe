@@ -1,19 +1,18 @@
 /**
- * NewConsultationPage — Phase 5A (Rich Pre-Consultation Context) / Phase 6A
+ * NewConsultationPage — Phase 5A (Rich Pre-Consultation Context) / Phase 6A / Phase 7 (P0-1)
  *
  * Flow:
  *   1. Doctor searches for and selects an existing patient.
  *   2. After selection, GET /api/patients/:id/overview is called once.
  *      This delivers: patient record + statistics + latest approved consultation
  *      (with full note) + recent consultations — all in a single round-trip.
- *   3. A rich pre-consultation context panel is shown:
- *        - Patient header (name, DOB, sex, MR)
- *        - Stats strip (total visits, approved, last visit date)
- *        - "Last visit" section with full clinical note fields
- *        - "What changed since last visit?" (Phase 6A — ChangeSummaryPanel)
- *        - "View full patient profile" link → /patients/:id
- *   4. "Start consultation" button navigates to /dashboard with patientId
- *      threaded through location.state (Phase 3B.2B wiring, unchanged).
+ *   3. A rich pre-consultation context panel is shown.
+ *   4. Phase 7 / P0-1 — Consent gate:
+ *        Before "Start consultation" becomes active the doctor must explicitly
+ *        check the patient-consent confirmation.  The checkbox is always
+ *        unchecked initially and resets whenever the selected patient changes.
+ *   5. "Start consultation" navigates to /dashboard with patientId + a consent
+ *      timestamp threaded through location.state.
  */
 
 import { useEffect, useRef, useState } from 'react';
@@ -367,25 +366,42 @@ export default function NewConsultationPage() {
   const navigate = useNavigate();
   const [selectedPatient, setSelectedPatient] = useState(null);
 
+  // Phase 7 / P0-1 — explicit patient-consent confirmation.
+  // Always false on mount and whenever the patient changes — never auto-checked.
+  const [consentChecked, setConsentChecked] = useState(false);
+
   function handleSelect(patient) {
     setSelectedPatient(patient);
+    setConsentChecked(false); // reset gate on every new patient selection
   }
 
   function handleClear() {
     setSelectedPatient(null);
+    setConsentChecked(false);
   }
 
   function handleStart() {
+    // Capture the consent timestamp at the moment the button is clicked.
+    // This is browser-originated and cannot be server-verified as an exact
+    // wall-clock time, but it accurately records the confirmation event.
+    const consentTimestamp = new Date().toISOString();
+
     navigate('/dashboard', {
       state: {
-        startRecording: true,
-        patientId:   selectedPatient?._id ?? null,
-        patientName: selectedPatient
+        startRecording:          true,
+        patientId:               selectedPatient?._id ?? null,
+        patientName:             selectedPatient
           ? `${selectedPatient.firstName} ${selectedPatient.lastName}`
           : null,
+        // The consent timestamp is only present when the doctor has
+        // explicitly confirmed — never for anonymous/non-patient sessions.
+        recordingConsentGivenAt: consentTimestamp,
       },
     });
   }
+
+  // Only enable start when a patient is selected AND consent is confirmed.
+  const canStart = Boolean(selectedPatient) && consentChecked;
 
   return (
     <div className="nc-page">
@@ -418,6 +434,27 @@ export default function NewConsultationPage() {
               />
             )}
           </section>
+
+          {/* ── Phase 7 / P0-1 — Recording consent gate ── */}
+          {selectedPatient && (
+            <section className="nc-consent-gate" aria-label="Recording consent confirmation">
+              <label className="nc-consent-label">
+                <input
+                  type="checkbox"
+                  className="nc-consent-checkbox"
+                  checked={consentChecked}
+                  onChange={(e) => setConsentChecked(e.target.checked)}
+                  aria-label="I confirm the patient has consented to recording and AI processing"
+                />
+                <span className="nc-consent-text">
+                  I confirm that the patient has been informed that this
+                  consultation will be audio-recorded and that the audio will
+                  be processed by an AI service to generate a transcript and
+                  clinical-note draft. The patient has agreed to proceed.
+                </span>
+              </label>
+            </section>
+          )}
         </div>
 
         {/* ── Right column: rich pre-consultation context ── */}
@@ -442,15 +479,20 @@ export default function NewConsultationPage() {
         <button
           type="button"
           className="nc-start-btn"
-          disabled={!selectedPatient}
+          disabled={!canStart}
           onClick={handleStart}
-          aria-describedby={!selectedPatient ? 'nc-start-hint' : undefined}
+          aria-describedby={!selectedPatient ? 'nc-start-hint' : (!consentChecked ? 'nc-consent-hint' : undefined)}
         >
           Start consultation
         </button>
         {!selectedPatient && (
           <p className="nc-start-hint" id="nc-start-hint">
             Select a patient above to enable this button.
+          </p>
+        )}
+        {selectedPatient && !consentChecked && (
+          <p className="nc-start-hint" id="nc-consent-hint">
+            Confirm patient consent above to start recording.
           </p>
         )}
       </div>

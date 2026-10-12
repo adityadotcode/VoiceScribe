@@ -184,8 +184,13 @@ function FileUploadSection({ onProcessFile, disabled }) {
 //     progress in its own progress display.
 //     Possible values: 'idle' | 'recording' | 'uploading' | 'transcribing' |
 //                      'success' | 'error'
+//
+//   consentConfirmed {boolean}  Phase 7 / P0-1 — must be true before
+//     startRecording is callable.  When false the Start Recording button is
+//     disabled and startRecording returns early.  This is a defence-in-depth
+//     check: the primary gate lives in NewConsultationPage.
 // ---------------------------------------------------------------------------
-function AudioRecorder({ onTranscriptReady, onStageChange }) {
+function AudioRecorder({ onTranscriptReady, onStageChange, consentConfirmed = false }) {
   const mediaRecorderRef = useRef(null)
   const chunksRef        = useRef([])
   const streamRef        = useRef(null)
@@ -223,6 +228,14 @@ function AudioRecorder({ onTranscriptReady, onStageChange }) {
   }
 
   async function startRecording() {
+    // Defence-in-depth: refuse to start if consent was not confirmed.
+    // The primary gate is in NewConsultationPage; this prevents bypass
+    // via direct navigation or programmatic calls.
+    if (!consentConfirmed) {
+      setErrorMessage('Recording cannot start: patient consent has not been confirmed.')
+      return
+    }
+
     setErrorMessage('')
     setObjectKey('')
     setAudioBlob(null)
@@ -403,7 +416,7 @@ function AudioRecorder({ onTranscriptReady, onStageChange }) {
             Stop recording
           </button>
         ) : (
-          <button type="button" className="recorder-button" onClick={startRecording} disabled={!canRecord}>
+          <button type="button" className="recorder-button" onClick={startRecording} disabled={!canRecord || !consentConfirmed}>
             Start recording
           </button>
         )}

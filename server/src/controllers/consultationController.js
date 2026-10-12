@@ -21,6 +21,8 @@ function parseBody(body) {
     patientId,
     consultationDate,
     encounterType,
+    // Phase 7 / P0-1 — recording consent timestamp (create-only; ignored on PUT)
+    recordingConsentGivenAt,
   } = body;
 
   if (transcript !== undefined && typeof transcript !== 'string') {
@@ -62,6 +64,17 @@ function parseBody(body) {
     if (isNaN(d.getTime())) errors.push('consultationDate must be a valid date');
   }
 
+  // Validate the recording consent timestamp when provided.
+  // It must be a parseable date string.  We do NOT reject missing values here —
+  // whether it is required is determined by createConsultation based on whether
+  // the consultation has a transcript (recorded) or not.
+  if (recordingConsentGivenAt !== undefined && recordingConsentGivenAt !== null) {
+    const d = new Date(recordingConsentGivenAt);
+    if (isNaN(d.getTime())) {
+      errors.push('recordingConsentGivenAt must be a valid ISO date string');
+    }
+  }
+
   return {
     errors,
     transcript,
@@ -73,6 +86,7 @@ function parseBody(body) {
     patientId,
     consultationDate,
     encounterType,
+    recordingConsentGivenAt,
   };
 }
 
@@ -91,7 +105,8 @@ function validateObjectId(id, res) {
 async function createConsultation(req, res) {
   const { errors, transcript, note, status,
           speakerUtterances, detectedLanguages, speakerRoleMapping,
-          patientId, consultationDate, encounterType } = parseBody(req.body);
+          patientId, consultationDate, encounterType,
+          recordingConsentGivenAt } = parseBody(req.body);
 
   if (errors.length) {
     return res.status(400).json({ success: false, message: errors.join('; ') });
@@ -111,6 +126,18 @@ async function createConsultation(req, res) {
     return res.status(400).json({
       success: false,
       message: 'chief_complaint is required when approving a consultation.',
+    });
+  }
+
+  // ── Recording consent required when a transcript is present ──────────
+  // A non-empty transcript means audio was recorded and processed.
+  // The doctor must have confirmed patient consent before recording started.
+  // Manual-entry consultations (no transcript) do not require this field.
+  const hasTranscript = typeof transcript === 'string' && transcript.trim().length > 0;
+  if (hasTranscript && !recordingConsentGivenAt) {
+    return res.status(400).json({
+      success: false,
+      message: 'recordingConsentGivenAt is required when a transcript is provided.',
     });
   }
 
@@ -140,6 +167,12 @@ async function createConsultation(req, res) {
       speakerUtterances:  speakerUtterances  ?? [],
       detectedLanguages:  detectedLanguages  ?? [],
       speakerRoleMapping: speakerRoleMapping ?? {},
+      // Recording consent — persisted only when the doctor confirmed before recording.
+      // recordingConsentConfirmedBy is always taken from the verified token, never
+      // from the client body, so it cannot be fabricated by an attacker.
+      recordingConsentGivenAt:       recordingConsentGivenAt
+        ? new Date(recordingConsentGivenAt) : null,
+      recordingConsentConfirmedBy:   hasTranscript ? req.user.id : null,
     });
 
     return res.status(201).json({ success: true, consultation: doc });

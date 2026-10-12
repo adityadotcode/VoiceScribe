@@ -159,6 +159,12 @@ function DashboardApp() {
   const [activePatientId,   setActivePatientId]   = useState(null)
   const [activePatientName, setActivePatientName] = useState(null)
 
+  // ── Phase 7 / P0-1 — recording consent ───────────────────────────────────
+  // Populated from location.state only when the doctor confirmed consent in
+  // NewConsultationPage.  null means consent was not given (manual sessions,
+  // direct navigation, page refresh).  Recording is blocked without this value.
+  const [recordingConsentGivenAt, setRecordingConsentGivenAt] = useState(null)
+
   const stageRef = useRef(STAGE.DASHBOARD)
 
   // Read patientId / patientName from router state set by NewConsultationPage.
@@ -170,7 +176,12 @@ function DashboardApp() {
       setActivePatientId(state.patientId)
       setActivePatientName(state.patientName ?? null)
     }
-    if (state?.startRecording) {
+    // Phase 7 / P0-1 — only advance to RECORDING stage when consent was
+    // explicitly confirmed in NewConsultationPage.  Direct navigation to
+    // /dashboard without a valid consent timestamp leaves the stage on
+    // DASHBOARD, preventing the AudioRecorder from auto-mounting.
+    if (state?.startRecording && state?.recordingConsentGivenAt) {
+      setRecordingConsentGivenAt(state.recordingConsentGivenAt)
       setStage(STAGE.RECORDING)
     }
     // Intentionally run only on mount — do not re-run on location changes.
@@ -326,6 +337,8 @@ function DashboardApp() {
     // Clear patient context — a fresh recording from the dashboard has no pre-selected patient
     setActivePatientId(null)
     setActivePatientName(null)
+    // Clear consent — must be re-confirmed for any subsequent recording
+    setRecordingConsentGivenAt(null)
   }
 
   function handleSaved(id) {
@@ -422,6 +435,7 @@ function DashboardApp() {
             initialConsultationId={activeConsultationId}
             patientId={activePatientId}
             patientName={activePatientName}
+            recordingConsentGivenAt={recordingConsentGivenAt}
             onBack={handleBack}
             onSaved={handleSaved}
           />
@@ -469,6 +483,7 @@ function DashboardApp() {
             <AudioRecorder
               onTranscriptReady={handleTranscriptReady}
               onStageChange={handleStageChange}
+              consentConfirmed={Boolean(recordingConsentGivenAt)}
             />
           ) : (
             <div className="workspace-start-card">

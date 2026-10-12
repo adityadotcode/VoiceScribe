@@ -133,10 +133,13 @@ function makeConsultation(overrides = {}) {
 }
 
 // Valid minimal body for POST /api/consultations
+// Phase 7 / P0-1: recordingConsentGivenAt is required when transcript is non-empty.
+const CONSENT_TIMESTAMP = '2026-09-01T09:00:00.000Z';
 const validCreateBody = {
-  patientId:  PID_1,
-  transcript: 'Patient reports cough for 3 days.',
-  note:       { chief_complaint: 'cough' },
+  patientId:               PID_1,
+  transcript:              'Patient reports cough for 3 days.',
+  note:                    { chief_complaint: 'cough' },
+  recordingConsentGivenAt: CONSENT_TIMESTAMP,
 };
 
 // ---------------------------------------------------------------------------
@@ -386,5 +389,140 @@ describe('GET /api/patients/:id/last-approved', () => {
     expect(Patient.findOne).toHaveBeenCalledWith(
       expect.objectContaining({ userId: ID_B })
     );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 6 — POST /api/consultations — recording consent (Phase 7 / P0-1)
+// ---------------------------------------------------------------------------
+
+describe('POST /api/consultations — recording consent', () => {
+
+  test('16. transcript provided without recordingConsentGivenAt → 400', async () => {
+    const res = await request(app)
+      .post('/api/consultations')
+      .set('Authorization', `Bearer ${tokenA}`)
+      .send({
+        patientId:  PID_1,
+        transcript: 'Patient reports fever.',
+        // recordingConsentGivenAt intentionally omitted
+      });
+
+    expect(res.status).toBe(400);
+    expect(res.body.message).toMatch(/recordingConsentGivenAt is required/i);
+  });
+
+  test('17. transcript provided with invalid date string for recordingConsentGivenAt → 400', async () => {
+    const res = await request(app)
+      .post('/api/consultations')
+      .set('Authorization', `Bearer ${tokenA}`)
+      .send({
+        patientId:               PID_1,
+        transcript:              'Patient reports fever.',
+        recordingConsentGivenAt: 'not-a-date',
+      });
+
+    expect(res.status).toBe(400);
+    expect(res.body.message).toMatch(/recordingConsentGivenAt must be a valid ISO date/i);
+  });
+
+  test('18. no transcript (manual entry) → 201 without recordingConsentGivenAt', async () => {
+    // Manual consultations have no audio — consent is not applicable.
+    Patient.findOne.mockReturnValueOnce(leanResult(makePatient()));
+    Consultation.create.mockResolvedValueOnce(makeConsultation());
+
+    const res = await request(app)
+      .post('/api/consultations')
+      .set('Authorization', `Bearer ${tokenA}`)
+      .send({
+        patientId: PID_1,
+        note:      { chief_complaint: 'Cough' },
+        // transcript absent → manual entry; consent not required
+      });
+
+    expect(res.status).toBe(201);
+  });
+
+  test('19. empty-string transcript → 201 without recordingConsentGivenAt (treated as manual)', async () => {
+    Patient.findOne.mockReturnValueOnce(leanResult(makePatient()));
+    Consultation.create.mockResolvedValueOnce(makeConsultation());
+
+    const res = await request(app)
+      .post('/api/consultations')
+      .set('Authorization', `Bearer ${tokenA}`)
+      .send({
+        patientId:  PID_1,
+        transcript: '',       // empty string — no real audio; consent not required
+        note:       { chief_complaint: 'Cough' },
+      });
+
+    expect(res.status).toBe(201);
+  });
+
+  test('20. valid recordingConsentGivenAt is persisted on recorded consultation', async () => {
+    Patient.findOne.mockReturnValueOnce(leanResult(makePatient()));
+    Consultation.create.mockResolvedValueOnce(makeConsultation());
+
+    await request(app)
+      .post('/api/consultations')
+      .set('Authorization', `Bearer ${tokenA}`)
+      .send(validCreateBody);
+
+    const createArg = Consultation.create.mock.calls[0][0];
+    expect(createArg.recordingConsentGivenAt).toBeInstanceOf(Date);
+    // Verify it is the expected timestamp
+    expect(createArg.recordingConsentGivenAt.toISOString()).toBe(CONSENT_TIMESTAMP);
+  });
+
+  test('21. recordingConsentConfirmedBy is always set from the token — never from the client body', async () => {
+    Patient.findOne.mockReturnValueOnce(leanResult(makePatient()));
+    Consultation.create.mockResolvedValueOnce(makeConsultation());
+
+    // Attacker tries to forge a different doctor's ID as the confirming user
+    await request(app)
+      .post('/api/consultations')
+      .set('Authorization', `Bearer ${tokenA}`)
+      .send({ ...validCreateBody, recordingConsentConfirmedBy: ID_B });
+
+    const createArg = Consultation.create.mock.calls[0][0];
+    // Must be Doctor A (from the JWT), not the attacker-supplied Doctor B
+    expect(createArg.recordingConsentConfirmedBy).toBe(ID_A);
+    expect(createArg.recordingConsentConfirmedBy).not.toBe(ID_B);
+  });
+
+  test('22. recordingConsentGivenAt null on manual consultation (no transcript)', async () => {
+    Patient.findOne.mockReturnValueOnce(leanResult(makePatient()));
+    Consultation.create.mockResolvedValueOnce(makeConsultation());
+
+    await request(app)
+      .post('/api/consultations')
+      .set('Authorization', `Bearer ${tokenA}`)
+      .send({
+        patientId: PID_1,
+        note:      { chief_complaint: 'Follow-up review' },
+      });
+
+    const createArg = Consultation.create.mock.calls[0][0];
+    expect(createArg.recordingConsentGivenAt).toBeNull();
+    expect(createArg.recordingConsentConfirmedBy).toBeNull();
+  });
+
+  test('23. recordingConsentGivenAt is not accepted on PUT (update) — field is create-only', async () => {
+    // PUT /api/consultations/:id must ignore recordingConsentGivenAt
+    const draft = makeConsultation({ status: 'draft' });
+    Consultation.findOne.mockResolvedValueOnce(draft);
+
+    await request(app)
+      .put(`/api/consultations/${CID_1}`)
+      .set('Authorization', `Bearer ${tokenA}`)
+      .send({ transcript: 'updated transcript', recordingConsentGivenAt: CONSENT_TIMESTAMP });
+
+    // updateConsultation does not call Consultation.create — the field is simply
+    // not present on the updateConsultation code path.
+    expect(Consultation.create).not.toHaveBeenCalled();
+    // The consultation was saved (via save() on the existing document)
+    expect(draft.save).toHaveBeenCalled();
+    // recordingConsentGivenAt on the existing document is unchanged (still null/default)
+    expect(draft.recordingConsentGivenAt).toBeUndefined();
   });
 });
