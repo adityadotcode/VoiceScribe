@@ -62,6 +62,10 @@ vi.mock('../services/api/consultations.js', () => ({
   apiApproveConsultation: vi.fn(),
 }));
 
+vi.mock('../services/api/recordingConsents.js', () => ({
+  apiCreateRecordingConsent: vi.fn(),
+}));
+
 vi.mock('../services/pdfExport.js', () => ({
   generateConsultationPdf: vi.fn(() => 'consultation-2026-09-01.pdf'),
 }));
@@ -81,6 +85,7 @@ vi.mock('jspdf', () => ({
 
 import { apiListPatients, apiGetPatientOverview } from '../services/api/patients.js';
 import { apiFetch } from '../api.js';
+import { apiCreateRecordingConsent } from '../services/api/recordingConsents.js';
 import NewConsultationPage from '../pages/NewConsultationPage.jsx';
 
 // ---------------------------------------------------------------------------
@@ -155,6 +160,12 @@ beforeEach(() => {
   vi.useFakeTimers({ shouldAdvanceTime: true });
   apiListPatients.mockResolvedValue({ success: true, patients: [makePatient()] });
   apiGetPatientOverview.mockResolvedValue(makeOverview());
+  // Default: consent server call succeeds
+  apiCreateRecordingConsent.mockResolvedValue({
+    success:       true,
+    consentEventId: 'server-event-id-aaa',
+    givenAt:        '2026-09-01T09:00:00.000Z',
+  });
 });
 
 afterEach(() => {
@@ -238,8 +249,8 @@ describe('4. "Start consultation" requires consent checkbox', () => {
   });
 });
 
-describe('5. "Start consultation" navigates with recordingConsentGivenAt', () => {
-  test('5a. clicking Start with consent navigates to /dashboard', async () => {
+describe('5. "Start consultation" calls server and navigates on success', () => {
+  test('5a. clicking Start with consent calls apiCreateRecordingConsent then navigates', async () => {
     await selectAlice();
 
     await userEvent.click(
@@ -252,17 +263,13 @@ describe('5. "Start consultation" navigates with recordingConsentGivenAt', () =>
     await waitFor(() =>
       expect(screen.getByTestId('dashboard-page')).toBeInTheDocument()
     );
+    expect(apiCreateRecordingConsent).toHaveBeenCalledWith(PATIENT_ID);
   });
 
   test('5b. clicking Start without checking consent does NOT navigate', async () => {
     await selectAlice();
-    // Do NOT check the consent checkbox
-
-    // Button should be disabled — clicking it does nothing
     const btn = screen.getByRole('button', { name: /start consultation/i });
     expect(btn).toBeDisabled();
-
-    // dashboard should never appear
     expect(screen.queryByTestId('dashboard-page')).not.toBeInTheDocument();
   });
 });
@@ -369,7 +376,7 @@ describe('9. direct navigation cannot bypass the consent gate', () => {
 
 import ClinicalNoteReview from '../ClinicalNoteReview.jsx';
 
-const CONSENT_TS = '2026-09-01T09:00:00.000Z';
+const CONSENT_EVENT_ID = 'server-issued-event-aaa';
 
 function makeNote(overrides = {}) {
   return {
@@ -396,7 +403,7 @@ function renderReviewWithConsent(extraProps = {}) {
         transcript="Patient reports cough."
         patientId={PATIENT_ID}
         patientName="Alice Smith"
-        recordingConsentGivenAt={CONSENT_TS}
+        consentEventId={CONSENT_EVENT_ID}
         onBack={vi.fn()}
         onSaved={vi.fn()}
         {...extraProps}
@@ -405,12 +412,12 @@ function renderReviewWithConsent(extraProps = {}) {
   );
 }
 
-describe('10. recordingConsentGivenAt flows into the save payload', () => {
+describe('10. consentEventId (server-issued) flows into the save payload', () => {
   beforeEach(() => {
     localStorage.clear();
   });
 
-  test('10a. recordingConsentGivenAt is included in the POST body when saving a draft', async () => {
+  test('10a. consentEventId is included in the POST body when saving a draft', async () => {
     apiFetch.mockResolvedValueOnce(
       new Response(
         JSON.stringify({ success: true, consultation: { _id: 'cccccccccccccccccccccccc' } }),
@@ -426,10 +433,12 @@ describe('10. recordingConsentGivenAt flows into the save payload', () => {
 
     const [, opts] = apiFetch.mock.calls[0];
     const body = JSON.parse(opts.body);
-    expect(body.recordingConsentGivenAt).toBe(CONSENT_TS);
+    expect(body.consentEventId).toBe(CONSENT_EVENT_ID);
+    // The old browser timestamp must NOT be in the body
+    expect(body.recordingConsentGivenAt).toBeUndefined();
   });
 
-  test('10b. recordingConsentGivenAt is included in the POST body when approving', async () => {
+  test('10b. consentEventId is included in the POST body when approving', async () => {
     apiFetch.mockResolvedValueOnce(
       new Response(
         JSON.stringify({ success: true, consultation: { _id: 'cccccccccccccccccccccccc' } }),
@@ -439,7 +448,6 @@ describe('10. recordingConsentGivenAt flows into the save payload', () => {
 
     renderReviewWithConsent();
 
-    // Check all three approval checklist items
     const checkboxes = screen.getAllByRole('checkbox');
     for (const cb of checkboxes) {
       await userEvent.click(cb);
@@ -451,10 +459,10 @@ describe('10. recordingConsentGivenAt flows into the save payload', () => {
 
     const [, opts] = apiFetch.mock.calls[0];
     const body = JSON.parse(opts.body);
-    expect(body.recordingConsentGivenAt).toBe(CONSENT_TS);
+    expect(body.consentEventId).toBe(CONSENT_EVENT_ID);
   });
 
-  test('10c. recordingConsentGivenAt is NOT included in PUT body (existing consultation)', async () => {
+  test('10c. consentEventId is NOT included in PUT body (existing consultation)', async () => {
     apiFetch.mockResolvedValueOnce(
       new Response(
         JSON.stringify({ success: true, consultation: { _id: 'cccccccccccccccccccccccc' } }),
@@ -462,7 +470,6 @@ describe('10. recordingConsentGivenAt flows into the save payload', () => {
       )
     );
 
-    // initialConsultationId is set → PUT, not POST
     renderReviewWithConsent({ initialConsultationId: 'cccccccccccccccccccccccc' });
 
     await userEvent.click(screen.getByRole('button', { name: /save draft/i }));
@@ -470,14 +477,13 @@ describe('10. recordingConsentGivenAt flows into the save payload', () => {
     await waitFor(() => expect(apiFetch).toHaveBeenCalled());
 
     const [path, opts] = apiFetch.mock.calls[0];
-    expect(path).toContain('/api/consultations/');  // PUT path includes ID
+    expect(path).toContain('/api/consultations/');
     expect(opts.method).toBe('PUT');
     const body = JSON.parse(opts.body);
-    // On PUT the consent timestamp must NOT be included
-    expect(body.recordingConsentGivenAt).toBeUndefined();
+    expect(body.consentEventId).toBeUndefined();
   });
 
-  test('10d. null recordingConsentGivenAt prop results in field being absent from POST body', async () => {
+  test('10d. null consentEventId prop results in field being absent from POST body (manual entry)', async () => {
     apiFetch.mockResolvedValueOnce(
       new Response(
         JSON.stringify({ success: true, consultation: { _id: 'cccccccccccccccccccccccc' } }),
@@ -485,8 +491,7 @@ describe('10. recordingConsentGivenAt flows into the save payload', () => {
       )
     );
 
-    // Manual consultation — no consent timestamp
-    renderReviewWithConsent({ recordingConsentGivenAt: null });
+    renderReviewWithConsent({ consentEventId: null });
 
     await userEvent.click(screen.getByRole('button', { name: /save draft/i }));
 
@@ -494,6 +499,113 @@ describe('10. recordingConsentGivenAt flows into the save payload', () => {
 
     const [, opts] = apiFetch.mock.calls[0];
     const body = JSON.parse(opts.body);
-    expect(body.recordingConsentGivenAt).toBeUndefined();
+    expect(body.consentEventId).toBeUndefined();
+  });
+});
+
+// ===========================================================================
+// Section D — Server call behaviour in NewConsultationPage (P0-1B)
+// ===========================================================================
+
+describe('11. server consent request is called before recording navigation', () => {
+  test('11a. apiCreateRecordingConsent is called with the patient ID when Start is clicked', async () => {
+    await selectAlice();
+
+    await userEvent.click(
+      screen.getByRole('checkbox', { name: /patient has.*consent/i })
+    );
+    await userEvent.click(
+      screen.getByRole('button', { name: /start consultation/i })
+    );
+
+    await waitFor(() => expect(apiCreateRecordingConsent).toHaveBeenCalled());
+    expect(apiCreateRecordingConsent).toHaveBeenCalledWith(PATIENT_ID);
+  });
+
+  test('11b. button shows "Recording consent…" while request is in-flight', async () => {
+    // Never resolves — keeps the button in submitting state
+    apiCreateRecordingConsent.mockReturnValue(new Promise(() => {}));
+
+    await selectAlice();
+    await userEvent.click(
+      screen.getByRole('checkbox', { name: /patient has.*consent/i })
+    );
+    await userEvent.click(
+      screen.getByRole('button', { name: /start consultation/i })
+    );
+
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /recording consent/i })).toBeDisabled()
+    );
+  });
+});
+
+describe('12. recording is blocked when server consent request fails', () => {
+  test('12a. API success:false shows error and does NOT navigate', async () => {
+    apiCreateRecordingConsent.mockResolvedValue({
+      success: false,
+      message: 'Patient not found.',
+    });
+
+    await selectAlice();
+
+    await userEvent.click(
+      screen.getByRole('checkbox', { name: /patient has.*consent/i })
+    );
+    await userEvent.click(
+      screen.getByRole('button', { name: /start consultation/i })
+    );
+
+    await waitFor(() =>
+      expect(screen.getByRole('alert')).toBeInTheDocument()
+    );
+    expect(screen.queryByTestId('dashboard-page')).not.toBeInTheDocument();
+  });
+
+  test('12b. network failure shows error and does NOT navigate', async () => {
+    apiCreateRecordingConsent.mockRejectedValue(new Error('Network failure'));
+
+    await selectAlice();
+
+    await userEvent.click(
+      screen.getByRole('checkbox', { name: /patient has.*consent/i })
+    );
+    await userEvent.click(
+      screen.getByRole('button', { name: /start consultation/i })
+    );
+
+    await waitFor(() =>
+      expect(screen.getByRole('alert')).toBeInTheDocument()
+    );
+    expect(screen.getByRole('alert').textContent).toMatch(/network error/i);
+    expect(screen.queryByTestId('dashboard-page')).not.toBeInTheDocument();
+  });
+
+  test('12c. after failure, the Start button is re-enabled for retry', async () => {
+    apiCreateRecordingConsent.mockRejectedValue(new Error('Timeout'));
+
+    await selectAlice();
+    await userEvent.click(
+      screen.getByRole('checkbox', { name: /patient has.*consent/i })
+    );
+    await userEvent.click(
+      screen.getByRole('button', { name: /start consultation/i })
+    );
+
+    await waitFor(() => expect(screen.getByRole('alert')).toBeInTheDocument());
+
+    // The start button should be re-enabled (not submitting any more)
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /start consultation/i })).not.toBeDisabled()
+    );
+  });
+});
+
+describe('13. page refresh cannot restore a server-issued consent event', () => {
+  test('13a. localStorage does not contain a consentEventId', () => {
+    renderNewConsultation();
+    const keys = Object.keys(localStorage);
+    const consentKey = keys.find((k) => /consent/i.test(k));
+    expect(consentKey).toBeUndefined();
   });
 });

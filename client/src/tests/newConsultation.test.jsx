@@ -38,6 +38,11 @@ vi.mock('../services/api/patients.js', () => ({
   apiGetChangeSummary:         vi.fn(),
 }));
 
+// Phase 7 / P0-1B — server consent endpoint mock
+vi.mock('../services/api/recordingConsents.js', () => ({
+  apiCreateRecordingConsent: vi.fn(),
+}));
+
 vi.mock('../api.js', () => ({
   apiFetch:       vi.fn(),
   apiUrl:         (p) => p,
@@ -51,6 +56,7 @@ import {
   apiGetPatientOverview,
   apiGetChangeSummary,
 } from '../services/api/patients.js';
+import { apiCreateRecordingConsent } from '../services/api/recordingConsents.js';
 
 import NewConsultationPage from '../pages/NewConsultationPage.jsx';
 
@@ -121,6 +127,13 @@ beforeEach(() => {
 
   apiListPatients.mockResolvedValue({ success: true, patients: [makePatient()] });
   apiGetPatientOverview.mockResolvedValue(makeOverview());
+  // Phase 7 / P0-1B: default success so tests that click "Start consultation"
+  // don't fail on the server consent call unless explicitly testing that path.
+  apiCreateRecordingConsent.mockResolvedValue({
+    success:        true,
+    consentEventId: 'test-consent-event-id',
+    givenAt:        '2026-09-01T09:00:00.000Z',
+  });
 });
 
 afterEach(() => {

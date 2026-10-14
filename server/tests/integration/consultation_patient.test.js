@@ -44,6 +44,17 @@ jest.mock('../../src/models/Consultation', () => ({
 }));
 const Consultation = require('../../src/models/Consultation');
 
+// Phase 7 / P0-1B — consent event model mock
+jest.mock('../../src/models/RecordingConsent', () => {
+  const mockFn = jest.fn();
+  mockFn.findOne = jest.fn();
+  mockFn.create  = jest.fn();
+  mockFn.WORDING_VERSION = 'v1';
+  mockFn.WORDING_TEXT    = 'I confirm that the patient has been informed…';
+  return mockFn;
+});
+const RecordingConsent = require('../../src/models/RecordingConsent');
+
 // ---------------------------------------------------------------------------
 // App + helpers
 // ---------------------------------------------------------------------------
@@ -133,14 +144,30 @@ function makeConsultation(overrides = {}) {
 }
 
 // Valid minimal body for POST /api/consultations
-// Phase 7 / P0-1: recordingConsentGivenAt is required when transcript is non-empty.
-const CONSENT_TIMESTAMP = '2026-09-01T09:00:00.000Z';
+// Phase 7 / P0-1B: consentEventId is required when transcript is non-empty.
+// The server validates the event against RecordingConsent; tests mock that model.
+const EVT_1 = '333333333333333333333333'; // A consent event ID
 const validCreateBody = {
-  patientId:               PID_1,
-  transcript:              'Patient reports cough for 3 days.',
-  note:                    { chief_complaint: 'cough' },
-  recordingConsentGivenAt: CONSENT_TIMESTAMP,
+  patientId:      PID_1,
+  transcript:     'Patient reports cough for 3 days.',
+  note:           { chief_complaint: 'cough' },
+  consentEventId: EVT_1,
 };
+
+function makeConsentEvent(overrides = {}) {
+  return {
+    _id:          { toString: () => EVT_1 },
+    userId:       ID_A,
+    patientId:    PID_1,
+    givenAt:      new Date('2026-09-01T09:00:00.000Z'),
+    wordingVersion: 'v1',
+    status:         'pending',
+    linkedConsultationId: null,
+    linkedAt:       null,
+    save: jest.fn().mockResolvedValue(true),
+    ...overrides,
+  };
+}
 
 // ---------------------------------------------------------------------------
 // 1 — POST /api/consultations — patientId validation
@@ -208,6 +235,7 @@ describe('POST /api/consultations — patientId required', () => {
 describe('POST /api/consultations — successful creation', () => {
   test('5. valid patientId owned by user → 201 with patientId persisted', async () => {
     Patient.findOne.mockReturnValueOnce(leanResult(makePatient()));
+    RecordingConsent.findOne.mockResolvedValueOnce(makeConsentEvent());
     Consultation.create.mockResolvedValueOnce(makeConsultation());
 
     const res = await request(app)
@@ -224,6 +252,7 @@ describe('POST /api/consultations — successful creation', () => {
 
   test('6. userId always from token — client-supplied userId is ignored', async () => {
     Patient.findOne.mockReturnValueOnce(leanResult(makePatient()));
+    RecordingConsent.findOne.mockResolvedValueOnce(makeConsentEvent());
     Consultation.create.mockResolvedValueOnce(makeConsultation());
 
     await request(app)
@@ -393,41 +422,41 @@ describe('GET /api/patients/:id/last-approved', () => {
 });
 
 // ---------------------------------------------------------------------------
-// 6 — POST /api/consultations — recording consent (Phase 7 / P0-1)
+// 6 — POST /api/consultations — recording consent (Phase 7 / P0-1B)
 // ---------------------------------------------------------------------------
 
-describe('POST /api/consultations — recording consent', () => {
+describe('POST /api/consultations — recording consent (P0-1B)', () => {
 
-  test('16. transcript provided without recordingConsentGivenAt → 400', async () => {
+  test('16. transcript provided without consentEventId → 400', async () => {
     const res = await request(app)
       .post('/api/consultations')
       .set('Authorization', `Bearer ${tokenA}`)
       .send({
         patientId:  PID_1,
         transcript: 'Patient reports fever.',
-        // recordingConsentGivenAt intentionally omitted
+        // consentEventId intentionally omitted
       });
 
     expect(res.status).toBe(400);
-    expect(res.body.message).toMatch(/recordingConsentGivenAt is required/i);
+    expect(res.body.message).toMatch(/consentEventId is required/i);
   });
 
-  test('17. transcript provided with invalid date string for recordingConsentGivenAt → 400', async () => {
+  test('17. invalid (non-ObjectId) consentEventId → 400', async () => {
     const res = await request(app)
       .post('/api/consultations')
       .set('Authorization', `Bearer ${tokenA}`)
       .send({
-        patientId:               PID_1,
-        transcript:              'Patient reports fever.',
-        recordingConsentGivenAt: 'not-a-date',
+        patientId:      PID_1,
+        transcript:     'Patient reports fever.',
+        consentEventId: 'not-valid',
       });
 
     expect(res.status).toBe(400);
-    expect(res.body.message).toMatch(/recordingConsentGivenAt must be a valid ISO date/i);
+    expect(res.body.message).toMatch(/consentEventId is not a valid ID/i);
   });
 
-  test('18. no transcript (manual entry) → 201 without recordingConsentGivenAt', async () => {
-    // Manual consultations have no audio — consent is not applicable.
+  test('18. no transcript (manual entry) → 201 without consentEventId', async () => {
+    // Manual consultations have no audio — consent event is not required.
     Patient.findOne.mockReturnValueOnce(leanResult(makePatient()));
     Consultation.create.mockResolvedValueOnce(makeConsultation());
 
@@ -437,13 +466,13 @@ describe('POST /api/consultations — recording consent', () => {
       .send({
         patientId: PID_1,
         note:      { chief_complaint: 'Cough' },
-        // transcript absent → manual entry; consent not required
       });
 
     expect(res.status).toBe(201);
+    expect(RecordingConsent.findOne).not.toHaveBeenCalled();
   });
 
-  test('19. empty-string transcript → 201 without recordingConsentGivenAt (treated as manual)', async () => {
+  test('19. empty-string transcript → 201 without consentEventId (treated as manual)', async () => {
     Patient.findOne.mockReturnValueOnce(leanResult(makePatient()));
     Consultation.create.mockResolvedValueOnce(makeConsultation());
 
@@ -452,15 +481,69 @@ describe('POST /api/consultations — recording consent', () => {
       .set('Authorization', `Bearer ${tokenA}`)
       .send({
         patientId:  PID_1,
-        transcript: '',       // empty string — no real audio; consent not required
+        transcript: '',
         note:       { chief_complaint: 'Cough' },
       });
 
     expect(res.status).toBe(201);
+    expect(RecordingConsent.findOne).not.toHaveBeenCalled();
   });
 
-  test('20. valid recordingConsentGivenAt is persisted on recorded consultation', async () => {
+  test('20. consentEventId not found / belongs to another user → 400', async () => {
     Patient.findOne.mockReturnValueOnce(leanResult(makePatient()));
+    RecordingConsent.findOne.mockResolvedValueOnce(null);
+
+    const res = await request(app)
+      .post('/api/consultations')
+      .set('Authorization', `Bearer ${tokenA}`)
+      .send(validCreateBody);
+
+    expect(res.status).toBe(400);
+    expect(res.body.message).toMatch(/recording consent event not found/i);
+  });
+
+  test('21. valid consentEventId — server event givenAt is persisted, not a client timestamp', async () => {
+    Patient.findOne.mockReturnValueOnce(leanResult(makePatient()));
+    const serverTime = new Date('2026-09-01T09:00:00.000Z');
+    const event = makeConsentEvent({ givenAt: serverTime });
+    RecordingConsent.findOne.mockResolvedValueOnce(event);
+    Consultation.create.mockResolvedValueOnce(makeConsultation());
+
+    await request(app)
+      .post('/api/consultations')
+      .set('Authorization', `Bearer ${tokenA}`)
+      .send({
+        ...validCreateBody,
+        // Attacker tries to supply a different timestamp
+        recordingConsentGivenAt: '2020-01-01T00:00:00.000Z',
+      });
+
+    const createArg = Consultation.create.mock.calls[0][0];
+    // Must use the server event's givenAt, not the client-supplied timestamp
+    expect(createArg.recordingConsentGivenAt).toEqual(serverTime);
+    expect(createArg.recordingConsentGivenAt.toISOString()).not.toBe('2020-01-01T00:00:00.000Z');
+  });
+
+  test('22. recordingConsentConfirmedBy is from the event — never from the client body', async () => {
+    Patient.findOne.mockReturnValueOnce(leanResult(makePatient()));
+    const event = makeConsentEvent({ userId: ID_A });
+    RecordingConsent.findOne.mockResolvedValueOnce(event);
+    Consultation.create.mockResolvedValueOnce(makeConsultation());
+
+    await request(app)
+      .post('/api/consultations')
+      .set('Authorization', `Bearer ${tokenA}`)
+      .send({ ...validCreateBody, recordingConsentConfirmedBy: ID_B });
+
+    const createArg = Consultation.create.mock.calls[0][0];
+    expect(createArg.recordingConsentConfirmedBy).toBe(ID_A);
+    expect(createArg.recordingConsentConfirmedBy).not.toBe(ID_B);
+  });
+
+  test('23. consent event is marked linked after successful consultation creation', async () => {
+    Patient.findOne.mockReturnValueOnce(leanResult(makePatient()));
+    const event = makeConsentEvent();
+    RecordingConsent.findOne.mockResolvedValueOnce(event);
     Consultation.create.mockResolvedValueOnce(makeConsultation());
 
     await request(app)
@@ -468,61 +551,23 @@ describe('POST /api/consultations — recording consent', () => {
       .set('Authorization', `Bearer ${tokenA}`)
       .send(validCreateBody);
 
-    const createArg = Consultation.create.mock.calls[0][0];
-    expect(createArg.recordingConsentGivenAt).toBeInstanceOf(Date);
-    // Verify it is the expected timestamp
-    expect(createArg.recordingConsentGivenAt.toISOString()).toBe(CONSENT_TIMESTAMP);
+    expect(event.status).toBe('linked');
+    expect(event.linkedAt).toBeInstanceOf(Date);
+    expect(event.save).toHaveBeenCalledTimes(1);
   });
 
-  test('21. recordingConsentConfirmedBy is always set from the token — never from the client body', async () => {
-    Patient.findOne.mockReturnValueOnce(leanResult(makePatient()));
-    Consultation.create.mockResolvedValueOnce(makeConsultation());
-
-    // Attacker tries to forge a different doctor's ID as the confirming user
-    await request(app)
-      .post('/api/consultations')
-      .set('Authorization', `Bearer ${tokenA}`)
-      .send({ ...validCreateBody, recordingConsentConfirmedBy: ID_B });
-
-    const createArg = Consultation.create.mock.calls[0][0];
-    // Must be Doctor A (from the JWT), not the attacker-supplied Doctor B
-    expect(createArg.recordingConsentConfirmedBy).toBe(ID_A);
-    expect(createArg.recordingConsentConfirmedBy).not.toBe(ID_B);
-  });
-
-  test('22. recordingConsentGivenAt null on manual consultation (no transcript)', async () => {
-    Patient.findOne.mockReturnValueOnce(leanResult(makePatient()));
-    Consultation.create.mockResolvedValueOnce(makeConsultation());
-
-    await request(app)
-      .post('/api/consultations')
-      .set('Authorization', `Bearer ${tokenA}`)
-      .send({
-        patientId: PID_1,
-        note:      { chief_complaint: 'Follow-up review' },
-      });
-
-    const createArg = Consultation.create.mock.calls[0][0];
-    expect(createArg.recordingConsentGivenAt).toBeNull();
-    expect(createArg.recordingConsentConfirmedBy).toBeNull();
-  });
-
-  test('23. recordingConsentGivenAt is not accepted on PUT (update) — field is create-only', async () => {
-    // PUT /api/consultations/:id must ignore recordingConsentGivenAt
+  test('24. PUT /api/consultations/:id does not create or modify consent events', async () => {
     const draft = makeConsultation({ status: 'draft' });
     Consultation.findOne.mockResolvedValueOnce(draft);
 
     await request(app)
       .put(`/api/consultations/${CID_1}`)
       .set('Authorization', `Bearer ${tokenA}`)
-      .send({ transcript: 'updated transcript', recordingConsentGivenAt: CONSENT_TIMESTAMP });
+      .send({ transcript: 'updated', consentEventId: EVT_1 });
 
-    // updateConsultation does not call Consultation.create — the field is simply
-    // not present on the updateConsultation code path.
+    // UPDATE must not touch RecordingConsent at all
+    expect(RecordingConsent.findOne).not.toHaveBeenCalled();
     expect(Consultation.create).not.toHaveBeenCalled();
-    // The consultation was saved (via save() on the existing document)
     expect(draft.save).toHaveBeenCalled();
-    // recordingConsentGivenAt on the existing document is unchanged (still null/default)
-    expect(draft.recordingConsentGivenAt).toBeUndefined();
   });
 });
