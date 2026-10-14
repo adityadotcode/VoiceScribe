@@ -1,22 +1,25 @@
 /**
- * NewConsultationPage — Phase 5A (Rich Pre-Consultation Context) / Phase 6A / Phase 7 (P0-1)
+ * NewConsultationPage — Phase 5A (Rich Pre-Consultation Context) / Phase 6A / Phase 7 (P0-1B)
  *
  * Flow:
  *   1. Doctor searches for and selects an existing patient.
  *   2. After selection, GET /api/patients/:id/overview is called once.
- *      This delivers: patient record + statistics + latest approved consultation
- *      (with full note) + recent consultations — all in a single round-trip.
  *   3. A rich pre-consultation context panel is shown.
- *   4. Phase 7 / P0-1 — Consent gate:
- *        Before "Start consultation" becomes active the doctor must explicitly
- *        check the patient-consent confirmation.  The checkbox is always
- *        unchecked initially and resets whenever the selected patient changes.
- *   5. "Start consultation" navigates to /dashboard with patientId + a consent
- *      timestamp threaded through location.state.
+ *   4. Phase 7 / P0-1B — Consent gate:
+ *        a. Doctor checks the consent confirmation checkbox (always unchecked initially).
+ *        b. "Start consultation" button triggers a POST /api/recording-consents call.
+ *        c. The server generates the authoritative consent timestamp and returns
+ *           a server-issued consentEventId.
+ *        d. Recording navigation only proceeds on a successful server response.
+ *        e. consentEventId (not a browser timestamp) is threaded through
+ *           location.state → ClinicalNoteReview → POST /api/consultations.
+ *   5. Recording is blocked if the consent request fails — an error is shown
+ *      and the doctor can retry safely.
  */
 
 import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import { apiCreateRecordingConsent } from '../services/api/recordingConsents.js';
 import {
   apiListPatients,
   apiGetPatientOverview,
@@ -370,38 +373,66 @@ export default function NewConsultationPage() {
   // Always false on mount and whenever the patient changes — never auto-checked.
   const [consentChecked, setConsentChecked] = useState(false);
 
+  // Phase 7 / P0-1B — server-side consent request state.
+  // 'idle' | 'submitting' | 'error'
+  const [consentState,    setConsentState]    = useState('idle');
+  const [consentError,    setConsentError]    = useState('');
+
   function handleSelect(patient) {
     setSelectedPatient(patient);
     setConsentChecked(false); // reset gate on every new patient selection
+    setConsentState('idle');
+    setConsentError('');
   }
 
   function handleClear() {
     setSelectedPatient(null);
     setConsentChecked(false);
+    setConsentState('idle');
+    setConsentError('');
   }
 
-  function handleStart() {
-    // Capture the consent timestamp at the moment the button is clicked.
-    // This is browser-originated and cannot be server-verified as an exact
-    // wall-clock time, but it accurately records the confirmation event.
-    const consentTimestamp = new Date().toISOString();
+  // Phase 7 / P0-1B: when "Start consultation" is clicked, POST the consent
+  // event to the server first.  Only navigate after a successful response.
+  // The server-issued consentEventId (not a browser timestamp) is passed into
+  // location.state so it can be verified at consultation-creation time.
+  async function handleStart() {
+    if (!canStart || consentState === 'submitting') return;
 
-    navigate('/dashboard', {
-      state: {
-        startRecording:          true,
-        patientId:               selectedPatient?._id ?? null,
-        patientName:             selectedPatient
-          ? `${selectedPatient.firstName} ${selectedPatient.lastName}`
-          : null,
-        // The consent timestamp is only present when the doctor has
-        // explicitly confirmed — never for anonymous/non-patient sessions.
-        recordingConsentGivenAt: consentTimestamp,
-      },
-    });
+    setConsentState('submitting');
+    setConsentError('');
+
+    try {
+      const data = await apiCreateRecordingConsent(selectedPatient._id);
+      if (!data.success) {
+        setConsentError(
+          data.message || 'Could not record consent. Please try again.'
+        );
+        setConsentState('error');
+        return;
+      }
+
+      // Navigate only on success — pass the server-issued event ID, not a
+      // browser timestamp.  A page refresh loses this state, requiring the
+      // doctor to go through the consent flow again.
+      navigate('/dashboard', {
+        state: {
+          startRecording:  true,
+          patientId:       selectedPatient._id ?? null,
+          patientName:     `${selectedPatient.firstName} ${selectedPatient.lastName}`,
+          consentEventId:  data.consentEventId,
+        },
+      });
+    } catch {
+      setConsentError('Network error — could not record consent. Please try again.');
+      setConsentState('error');
+    }
   }
 
-  // Only enable start when a patient is selected AND consent is confirmed.
+  // Only enable start when a patient is selected AND consent is confirmed
+  // AND not currently submitting.
   const canStart = Boolean(selectedPatient) && consentChecked;
+  const isSubmitting = consentState === 'submitting';
 
   return (
     <div className="nc-page">
@@ -445,6 +476,7 @@ export default function NewConsultationPage() {
                   checked={consentChecked}
                   onChange={(e) => setConsentChecked(e.target.checked)}
                   aria-label="I confirm the patient has consented to recording and AI processing"
+                  disabled={isSubmitting}
                 />
                 <span className="nc-consent-text">
                   I confirm that the patient has been informed that this
@@ -453,6 +485,13 @@ export default function NewConsultationPage() {
                   clinical-note draft. The patient has agreed to proceed.
                 </span>
               </label>
+
+              {/* Phase 7 / P0-1B — consent submission error */}
+              {consentState === 'error' && consentError && (
+                <p className="nc-consent-error" role="alert">
+                  {consentError}
+                </p>
+              )}
             </section>
           )}
         </div>
@@ -479,18 +518,22 @@ export default function NewConsultationPage() {
         <button
           type="button"
           className="nc-start-btn"
-          disabled={!canStart}
+          disabled={!canStart || isSubmitting}
           onClick={handleStart}
-          aria-describedby={!selectedPatient ? 'nc-start-hint' : (!consentChecked ? 'nc-consent-hint' : undefined)}
+          aria-describedby={
+            !selectedPatient    ? 'nc-start-hint'   :
+            !consentChecked     ? 'nc-consent-hint'  :
+            undefined
+          }
         >
-          Start consultation
+          {isSubmitting ? 'Recording consent…' : 'Start consultation'}
         </button>
         {!selectedPatient && (
           <p className="nc-start-hint" id="nc-start-hint">
             Select a patient above to enable this button.
           </p>
         )}
-        {selectedPatient && !consentChecked && (
+        {selectedPatient && !consentChecked && !isSubmitting && (
           <p className="nc-start-hint" id="nc-consent-hint">
             Confirm patient consent above to start recording.
           </p>

@@ -5061,7 +5061,7 @@
 }
 
 .nc-consent-checkbox {
-  margin-top: 3px;   /* optical alignment with first text line */
+  margin-top: 3px;   
   flex-shrink: 0;
   width: 16px;
   height: 16px;
@@ -5076,4 +5076,15 @@
 
 @media (max-width: 600px) {
   .nc-consent-gate { padding: 10px 12px; }
+}
+
+/* ── Phase 7 / P0-1B — consent submission error ── */
+.nc-consent-error {
+  font-size: 13px;
+  color: var(--red, #c0392b);
+  background: var(--red-bg, #fff0f0);
+  border: 1px solid var(--red-border, #f5c2c2);
+  border-radius: var(--radius-md, 6px);
+  padding: 8px 12px;
+  margin-top: 10px;
 }

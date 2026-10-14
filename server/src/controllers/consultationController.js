@@ -1,6 +1,7 @@
-const mongoose     = require('mongoose');
-const Consultation = require('../models/Consultation');
-const Patient      = require('../models/Patient');
+const mongoose          = require('mongoose');
+const Consultation      = require('../models/Consultation');
+const Patient           = require('../models/Patient');
+const RecordingConsent  = require('../models/RecordingConsent');
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -21,7 +22,13 @@ function parseBody(body) {
     patientId,
     consultationDate,
     encounterType,
-    // Phase 7 / P0-1 — recording consent timestamp (create-only; ignored on PUT)
+    // Phase 7 / P0-1B — server-issued consent event ID (create-only; ignored on PUT).
+    // Replaces the browser-originated recordingConsentGivenAt timestamp from P0-1.
+    consentEventId,
+    // Phase 7 / P0-1 legacy — browser-originated timestamp, still accepted for
+    // manual-note workflows that do not go through the new consent endpoint.
+    // NOT used as the authoritative timestamp for recorded consultations — the
+    // server copies givenAt from the RecordingConsent document instead.
     recordingConsentGivenAt,
   } = body;
 
@@ -64,10 +71,14 @@ function parseBody(body) {
     if (isNaN(d.getTime())) errors.push('consultationDate must be a valid date');
   }
 
-  // Validate the recording consent timestamp when provided.
-  // It must be a parseable date string.  We do NOT reject missing values here —
-  // whether it is required is determined by createConsultation based on whether
-  // the consultation has a transcript (recorded) or not.
+  // Validate consentEventId format when provided.
+  if (consentEventId !== undefined && consentEventId !== null) {
+    if (!mongoose.isValidObjectId(consentEventId)) {
+      errors.push('consentEventId is not a valid ID');
+    }
+  }
+
+  // Validate the legacy browser-originated consent timestamp when provided.
   if (recordingConsentGivenAt !== undefined && recordingConsentGivenAt !== null) {
     const d = new Date(recordingConsentGivenAt);
     if (isNaN(d.getTime())) {
@@ -86,6 +97,7 @@ function parseBody(body) {
     patientId,
     consultationDate,
     encounterType,
+    consentEventId,
     recordingConsentGivenAt,
   };
 }
@@ -106,7 +118,7 @@ async function createConsultation(req, res) {
   const { errors, transcript, note, status,
           speakerUtterances, detectedLanguages, speakerRoleMapping,
           patientId, consultationDate, encounterType,
-          recordingConsentGivenAt } = parseBody(req.body);
+          consentEventId } = parseBody(req.body);
 
   if (errors.length) {
     return res.status(400).json({ success: false, message: errors.join('; ') });
@@ -131,13 +143,14 @@ async function createConsultation(req, res) {
 
   // ── Recording consent required when a transcript is present ──────────
   // A non-empty transcript means audio was recorded and processed.
-  // The doctor must have confirmed patient consent before recording started.
-  // Manual-entry consultations (no transcript) do not require this field.
+  // The doctor must have confirmed patient consent before recording started,
+  // and that event must have been recorded server-side as a RecordingConsent
+  // document (Phase 7 / P0-1B).
   const hasTranscript = typeof transcript === 'string' && transcript.trim().length > 0;
-  if (hasTranscript && !recordingConsentGivenAt) {
+  if (hasTranscript && !consentEventId) {
     return res.status(400).json({
       success: false,
-      message: 'recordingConsentGivenAt is required when a transcript is provided.',
+      message: 'consentEventId is required when a transcript is provided.',
     });
   }
 
@@ -153,6 +166,27 @@ async function createConsultation(req, res) {
       return res.status(404).json({ success: false, message: 'Patient not found.' });
     }
 
+    // ── Verify the consent event (recorded consultations only) ───────────
+    let consentEvent = null;
+    if (hasTranscript && consentEventId) {
+      consentEvent = await RecordingConsent.findOne({
+        _id:       consentEventId,
+        userId:    req.user.id,   // must belong to this doctor
+        patientId,                // must be for this patient
+        status:    'pending',     // must not already be linked to another consultation
+      });
+
+      if (!consentEvent) {
+        // Returns 400 (not 404) — the event ID may be syntactically valid but
+        // wrong in context (foreign user, wrong patient, or already used).
+        return res.status(400).json({
+          success: false,
+          message: 'Recording consent event not found, does not belong to this user/patient, or has already been used.',
+        });
+      }
+    }
+
+    // ── Create the consultation ──────────────────────────────────────────
     const doc = await Consultation.create({
       // userId always from verified token — never from the client.
       userId:             req.user.id,
@@ -167,13 +201,25 @@ async function createConsultation(req, res) {
       speakerUtterances:  speakerUtterances  ?? [],
       detectedLanguages:  detectedLanguages  ?? [],
       speakerRoleMapping: speakerRoleMapping ?? {},
-      // Recording consent — persisted only when the doctor confirmed before recording.
-      // recordingConsentConfirmedBy is always taken from the verified token, never
-      // from the client body, so it cannot be fabricated by an attacker.
-      recordingConsentGivenAt:       recordingConsentGivenAt
-        ? new Date(recordingConsentGivenAt) : null,
-      recordingConsentConfirmedBy:   hasTranscript ? req.user.id : null,
+      // Recording consent — always copied from the server-side event.
+      // recordingConsentGivenAt comes from consentEvent.givenAt (server clock),
+      // NOT from the client body.  This is the key P0-1B integrity upgrade.
+      recordingConsentGivenAt:     consentEvent ? consentEvent.givenAt     : null,
+      recordingConsentConfirmedBy: consentEvent ? consentEvent.userId      : null,
     });
+
+    // ── Link the consent event to this consultation (atomic update) ──────
+    // Performed after successful Consultation.create() so we only mark the
+    // event as used when the consultation is actually persisted.
+    // If this update fails the consultation is still valid; the event will
+    // remain 'pending' but cannot cause a double-link because the consultation
+    // already references it.
+    if (consentEvent) {
+      consentEvent.status               = 'linked';
+      consentEvent.linkedConsultationId = doc._id;
+      consentEvent.linkedAt             = new Date();
+      await consentEvent.save();
+    }
 
     return res.status(201).json({ success: true, consultation: doc });
   } catch (err) {

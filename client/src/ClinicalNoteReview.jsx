@@ -499,10 +499,10 @@ function ClinicalNoteReview({
   // Phase 3B.2B — patient context threaded from NewConsultationPage
   patientId   = null,
   patientName = null,
-  // Phase 7 / P0-1 — recording consent timestamp (ISO string | null).
-  // Present only when the doctor confirmed consent before the recording.
-  // Null for manual-entry, demo, or re-opened consultations (no new recording).
-  recordingConsentGivenAt = null,
+  // Phase 7 / P0-1B — server-issued consent event ID (ISO string | null).
+  // Present only when the doctor went through the server-side consent flow
+  // before recording.  Null for manual-entry, demo, or re-opened consultations.
+  consentEventId = null,
   onBack,
   onSaved,
 }) {
@@ -611,9 +611,9 @@ function ClinicalNoteReview({
       // Only include patientId for new consultations (POST).
       // PUT ignores it on the backend (immutable after creation).
       ...(!consultationId && patientId ? { patientId } : {}),
-      // Include recording consent timestamp on POST (new consultation) only.
-      // For PUT (existing doc) the field is immutable — the backend ignores it.
-      ...(!consultationId && recordingConsentGivenAt ? { recordingConsentGivenAt } : {}),
+      // Include server-issued consent event ID on POST (new consultation) only.
+      // For PUT (existing doc) consent is already persisted — backend ignores it.
+      ...(!consultationId && consentEventId ? { consentEventId } : {}),
     }
 
     try {
@@ -660,8 +660,8 @@ function ClinicalNoteReview({
       detectedLanguages,
       speakerRoleMapping,
       ...(!consultationId && patientId ? { patientId } : {}),
-      // Include recording consent timestamp on POST (new consultation) only.
-      ...(!consultationId && recordingConsentGivenAt ? { recordingConsentGivenAt } : {}),
+      // Include server-issued consent event ID on POST (new consultation) only.
+      ...(!consultationId && consentEventId ? { consentEventId } : {}),
     }
 
     try {

@@ -159,11 +159,13 @@ function DashboardApp() {
   const [activePatientId,   setActivePatientId]   = useState(null)
   const [activePatientName, setActivePatientName] = useState(null)
 
-  // ── Phase 7 / P0-1 — recording consent ───────────────────────────────────
-  // Populated from location.state only when the doctor confirmed consent in
-  // NewConsultationPage.  null means consent was not given (manual sessions,
-  // direct navigation, page refresh).  Recording is blocked without this value.
+  // ── Phase 7 / P0-1B — recording consent ───────────────────────────────────
+  // Populated from location.state only when the server-side consent event was
+  // successfully created in NewConsultationPage.  null means consent was not
+  // recorded (manual sessions, direct navigation, page refresh).
+  // Recording is blocked without this value.
   const [recordingConsentGivenAt, setRecordingConsentGivenAt] = useState(null)
+  const [consentEventId,          setConsentEventId]          = useState(null)
 
   const stageRef = useRef(STAGE.DASHBOARD)
 
@@ -176,12 +178,14 @@ function DashboardApp() {
       setActivePatientId(state.patientId)
       setActivePatientName(state.patientName ?? null)
     }
-    // Phase 7 / P0-1 — only advance to RECORDING stage when consent was
-    // explicitly confirmed in NewConsultationPage.  Direct navigation to
-    // /dashboard without a valid consent timestamp leaves the stage on
-    // DASHBOARD, preventing the AudioRecorder from auto-mounting.
-    if (state?.startRecording && state?.recordingConsentGivenAt) {
-      setRecordingConsentGivenAt(state.recordingConsentGivenAt)
+    // Phase 7 / P0-1B — only advance to RECORDING stage when a valid
+    // server-issued consentEventId is present.  Direct navigation to
+    // /dashboard without a consent event leaves stage on DASHBOARD.
+    if (state?.startRecording && state?.consentEventId) {
+      setConsentEventId(state.consentEventId)
+      // recordingConsentGivenAt is no longer used for navigation gating
+      // (it will be sourced from the server-side event at save time).
+      setRecordingConsentGivenAt(null)
       setStage(STAGE.RECORDING)
     }
     // Intentionally run only on mount — do not re-run on location changes.
@@ -339,6 +343,7 @@ function DashboardApp() {
     setActivePatientName(null)
     // Clear consent — must be re-confirmed for any subsequent recording
     setRecordingConsentGivenAt(null)
+    setConsentEventId(null)
   }
 
   function handleSaved(id) {
@@ -435,7 +440,7 @@ function DashboardApp() {
             initialConsultationId={activeConsultationId}
             patientId={activePatientId}
             patientName={activePatientName}
-            recordingConsentGivenAt={recordingConsentGivenAt}
+            consentEventId={consentEventId}
             onBack={handleBack}
             onSaved={handleSaved}
           />
@@ -483,7 +488,7 @@ function DashboardApp() {
             <AudioRecorder
               onTranscriptReady={handleTranscriptReady}
               onStageChange={handleStageChange}
-              consentConfirmed={Boolean(recordingConsentGivenAt)}
+              consentConfirmed={Boolean(consentEventId)}
             />
           ) : (
             <div className="workspace-start-card">
