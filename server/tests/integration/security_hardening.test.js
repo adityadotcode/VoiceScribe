@@ -62,6 +62,20 @@ jest.mock('../../src/services/transcribeService', () => ({
 }));
 const { transcribeAudio } = require('../../src/services/transcribeService');
 
+// Phase 7 / P0-1C-Fix-A: transcribeController now requires a valid
+// consentEventId from RecordingConsent — mock the model here so existing
+// tests can supply a matching event without hitting MongoDB.
+jest.mock('../../src/models/RecordingConsent', () => {
+  const m = jest.fn();
+  m.findOne          = jest.fn();
+  m.findOneAndUpdate = jest.fn();
+  m.create           = jest.fn();
+  m.WORDING_VERSION  = 'v1';
+  m.WORDING_TEXT     = 'I confirm…';
+  return m;
+});
+const RecordingConsent = require('../../src/models/RecordingConsent');
+
 // ---------------------------------------------------------------------------
 // App + helpers
 // ---------------------------------------------------------------------------
@@ -312,6 +326,15 @@ describe('6. /api/extract-note does not leak AWS internals', () => {
 // ---------------------------------------------------------------------------
 describe('7. /api/transcribe does not leak internal error details', () => {
   test('transcription failure returns safe generic message', async () => {
+    // Phase 7 / P0-1C-Fix-A: transcribeController now validates consentEventId.
+    // Provide a valid pending event so the test reaches the transcription step.
+    const EVT = '333333333333333333333333';
+    RecordingConsent.findOne.mockResolvedValueOnce({
+      _id:    { toString: () => EVT },
+      userId: 'aaaaaaaaaaaaaaaaaaaaaaaa',
+      status: 'pending',
+    });
+
     transcribeAudio.mockRejectedValueOnce(
       new Error('TranscribeStreamingClient: connection refused at 10.0.0.5:8443')
     );
@@ -319,7 +342,7 @@ describe('7. /api/transcribe does not leak internal error details', () => {
     const res = await request(app)
       .post('/api/transcribe')
       .set('Authorization', `Bearer ${VALID_TOKEN}`)
-      .send({ objectKey: 'consultations/test.webm' });
+      .send({ objectKey: 'consultations/test.webm', consentEventId: EVT });
 
     expect(res.status).toBe(500);
     const body = JSON.stringify(res.body);

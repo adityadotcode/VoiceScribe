@@ -166,19 +166,22 @@ async function createConsultation(req, res) {
       return res.status(404).json({ success: false, message: 'Patient not found.' });
     }
 
-    // ── Verify the consent event (recorded consultations only) ───────────
-    let consentEvent = null;
+    // ── Pre-flight consent check (non-atomic read for early rejection) ────
+    // We read the event first to extract givenAt / userId for the Consultation
+    // fields and to return a clear error before doing any DB writes.
+    // The actual claim is performed atomically AFTER Consultation.create()
+    // using findOneAndUpdate with a conditional filter on status:'pending',
+    // which prevents two concurrent requests from both linking the same event.
+    let consentEventSnapshot = null;
     if (hasTranscript && consentEventId) {
-      consentEvent = await RecordingConsent.findOne({
+      consentEventSnapshot = await RecordingConsent.findOne({
         _id:       consentEventId,
         userId:    req.user.id,   // must belong to this doctor
         patientId,                // must be for this patient
-        status:    'pending',     // must not already be linked to another consultation
-      });
+        status:    'pending',     // must not already be linked
+      }).lean();
 
-      if (!consentEvent) {
-        // Returns 400 (not 404) — the event ID may be syntactically valid but
-        // wrong in context (foreign user, wrong patient, or already used).
+      if (!consentEventSnapshot) {
         return res.status(400).json({
           success: false,
           message: 'Recording consent event not found, does not belong to this user/patient, or has already been used.',
@@ -201,24 +204,50 @@ async function createConsultation(req, res) {
       speakerUtterances:  speakerUtterances  ?? [],
       detectedLanguages:  detectedLanguages  ?? [],
       speakerRoleMapping: speakerRoleMapping ?? {},
-      // Recording consent — always copied from the server-side event.
-      // recordingConsentGivenAt comes from consentEvent.givenAt (server clock),
-      // NOT from the client body.  This is the key P0-1B integrity upgrade.
-      recordingConsentGivenAt:     consentEvent ? consentEvent.givenAt     : null,
-      recordingConsentConfirmedBy: consentEvent ? consentEvent.userId      : null,
+      // Consent fields — copied from the pre-flight snapshot (server clock),
+      // NOT from the client body.
+      recordingConsentGivenAt:     consentEventSnapshot ? consentEventSnapshot.givenAt  : null,
+      recordingConsentConfirmedBy: consentEventSnapshot ? consentEventSnapshot.userId   : null,
     });
 
-    // ── Link the consent event to this consultation (atomic update) ──────
-    // Performed after successful Consultation.create() so we only mark the
-    // event as used when the consultation is actually persisted.
-    // If this update fails the consultation is still valid; the event will
-    // remain 'pending' but cannot cause a double-link because the consultation
-    // already references it.
-    if (consentEvent) {
-      consentEvent.status               = 'linked';
-      consentEvent.linkedConsultationId = doc._id;
-      consentEvent.linkedAt             = new Date();
-      await consentEvent.save();
+    // ── Atomically claim the consent event ───────────────────────────────
+    // Phase 7 / P0-1C-Fix-A:
+    // Replace the previous non-atomic findOne+save() pattern with a single
+    // findOneAndUpdate that uses a conditional filter on status:'pending'.
+    //
+    // If two concurrent POST /api/consultations requests both passed the
+    // pre-flight check above, only ONE of them will succeed here — the other
+    // will receive null (the event's status was already flipped to 'linked').
+    //
+    // In that race-losing case the consultation has already been created.
+    // We delete it to prevent an orphaned, consent-less consultation.
+    if (consentEventSnapshot) {
+      const claimed = await RecordingConsent.findOneAndUpdate(
+        {
+          _id:    consentEventSnapshot._id,
+          userId: req.user.id,
+          status: 'pending',    // conditional filter — only succeeds if still pending
+        },
+        {
+          $set: {
+            status:               'linked',
+            linkedConsultationId: doc._id,
+            linkedAt:             new Date(),
+          },
+        },
+        { new: false }  // we don't need the updated document
+      );
+
+      if (!claimed) {
+        // Another concurrent request already claimed this event.
+        // Roll back: delete the just-created consultation so it doesn't persist
+        // without valid consent metadata.
+        await doc.deleteOne();
+        return res.status(409).json({
+          success: false,
+          message: 'Recording consent event was already used by a concurrent request. Please start a new recording.',
+        });
+      }
     }
 
     return res.status(201).json({ success: true, consultation: doc });

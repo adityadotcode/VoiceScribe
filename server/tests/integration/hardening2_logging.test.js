@@ -52,6 +52,20 @@ jest.mock('../../src/services/transcribeService', () => ({
   transcribeAudio: jest.fn(),
 }));
 
+// Phase 7 / P0-1C-Fix-A: transcribeController now requires consentEventId
+// from RecordingConsent — add a model mock so existing tests can reach the
+// transcription error path they are testing.
+jest.mock('../../src/models/RecordingConsent', () => {
+  const m = jest.fn();
+  m.findOne          = jest.fn();
+  m.findOneAndUpdate = jest.fn();
+  m.create           = jest.fn();
+  m.WORDING_VERSION  = 'v1';
+  m.WORDING_TEXT     = 'I confirm…';
+  return m;
+});
+const RecordingConsent = require('../../src/models/RecordingConsent');
+
 // ---------------------------------------------------------------------------
 // App + helpers
 // ---------------------------------------------------------------------------
@@ -224,6 +238,15 @@ describe('5. AWS service errors do not appear in client response', () => {
   const { transcribeAudio } = require('../../src/services/transcribeService');
 
   test('Transcribe response contains no internal connection details', async () => {
+    // Phase 7 / P0-1C-Fix-A: supply a valid pending consent event so the
+    // transcription error-handling path under test can be reached.
+    const EVT = '333333333333333333333333';
+    RecordingConsent.findOne.mockResolvedValueOnce({
+      _id:    { toString: () => EVT },
+      userId: 'aaaaaaaaaaaaaaaaaaaaaaaa',
+      status: 'pending',
+    });
+
     transcribeAudio.mockRejectedValueOnce(
       new Error('connect ECONNREFUSED 169.254.169.254:80')
     );
@@ -231,7 +254,7 @@ describe('5. AWS service errors do not appear in client response', () => {
     const res = await request(app)
       .post('/api/transcribe')
       .set('Authorization', `Bearer ${TOKEN}`)
-      .send({ objectKey: 'consultations/test.webm' });
+      .send({ objectKey: 'consultations/test.webm', consentEventId: EVT });
 
     expect(res.status).toBe(500);
     const body = JSON.stringify(res.body);

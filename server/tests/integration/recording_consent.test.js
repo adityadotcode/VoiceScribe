@@ -401,11 +401,13 @@ describe('POST /api/consultations — consentEventId enforcement', () => {
     expect(res.body.message).toMatch(/already been used/i);
   });
 
-  test('17. valid consentEventId — consent is persisted and event is linked', async () => {
+  test('17. valid consentEventId — consent is persisted and event is atomically linked', async () => {
     Patient.findOne.mockReturnValueOnce(leanResult(makePatient()));
     const event = makeConsentEvent();
     RecordingConsent.findOne.mockResolvedValueOnce(event);
     Consultation.create.mockResolvedValueOnce(makeConsultation());
+    // Atomic claim succeeds — returns the old doc (truthy)
+    RecordingConsent.findOneAndUpdate.mockResolvedValueOnce(event);
 
     const res = await request(app)
       .post('/api/consultations')
@@ -415,16 +417,17 @@ describe('POST /api/consultations — consentEventId enforcement', () => {
     expect(res.status).toBe(201);
     expect(res.body.success).toBe(true);
 
-    // Consultation.create received the consent data
+    // Consultation.create received the consent data from the event snapshot
     const createArg = Consultation.create.mock.calls[0][0];
     expect(createArg.recordingConsentGivenAt).toEqual(event.givenAt);
     expect(createArg.recordingConsentConfirmedBy).toBe(event.userId);
 
-    // The consent event was marked as linked
-    expect(event.save).toHaveBeenCalledTimes(1);
-    expect(event.status).toBe('linked');
-    expect(event.linkedConsultationId).toBeDefined();
-    expect(event.linkedAt).toBeInstanceOf(Date);
+    // Atomic findOneAndUpdate was called to link the event
+    expect(RecordingConsent.findOneAndUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({ status: 'pending' }),
+      expect.objectContaining({ $set: expect.objectContaining({ status: 'linked' }) }),
+      expect.any(Object)
+    );
   });
 
   test('18. recordingConsentGivenAt is taken from the event — not from the client body', async () => {
@@ -433,6 +436,7 @@ describe('POST /api/consultations — consentEventId enforcement', () => {
     const event = makeConsentEvent({ givenAt: serverTimestamp });
     RecordingConsent.findOne.mockResolvedValueOnce(event);
     Consultation.create.mockResolvedValueOnce(makeConsultation());
+    RecordingConsent.findOneAndUpdate.mockResolvedValueOnce(event);
 
     // Attacker tries to pass a fake consent timestamp
     await request(app)
@@ -454,6 +458,7 @@ describe('POST /api/consultations — consentEventId enforcement', () => {
     const event = makeConsentEvent({ userId: ID_A });
     RecordingConsent.findOne.mockResolvedValueOnce(event);
     Consultation.create.mockResolvedValueOnce(makeConsultation());
+    RecordingConsent.findOneAndUpdate.mockResolvedValueOnce(event);
 
     // Attacker tries to forge confirmedBy
     await request(app)
@@ -462,7 +467,7 @@ describe('POST /api/consultations — consentEventId enforcement', () => {
       .send({ ...validCreateBody, recordingConsentConfirmedBy: ID_B });
 
     const createArg = Consultation.create.mock.calls[0][0];
-    expect(createArg.recordingConsentConfirmedBy).toBe(ID_A);   // from event.userId
+    expect(createArg.recordingConsentConfirmedBy).toBe(ID_A);
     expect(createArg.recordingConsentConfirmedBy).not.toBe(ID_B);
   });
 

@@ -189,8 +189,13 @@ function FileUploadSection({ onProcessFile, disabled }) {
 //     startRecording is callable.  When false the Start Recording button is
 //     disabled and startRecording returns early.  This is a defence-in-depth
 //     check: the primary gate lives in NewConsultationPage.
+//
+//   consentEventId {string|null}  Phase 7 / P0-1C-Fix-A — server-issued
+//     RecordingConsent _id.  Sent as a form field on POST /api/audio and as a
+//     JSON field on POST /api/transcribe so the server can verify consent
+//     ownership before accepting the audio or starting an AWS Transcribe job.
 // ---------------------------------------------------------------------------
-function AudioRecorder({ onTranscriptReady, onStageChange, consentConfirmed = false }) {
+function AudioRecorder({ onTranscriptReady, onStageChange, consentConfirmed = false, consentEventId = null }) {
   const mediaRecorderRef = useRef(null)
   const chunksRef        = useRef([])
   const streamRef        = useRef(null)
@@ -321,6 +326,12 @@ function AudioRecorder({ onTranscriptReady, onStageChange, consentConfirmed = fa
 
     const formData = new FormData()
     formData.append('audio', file)
+    // Phase 7 / P0-1C-Fix-A: include consentEventId so the server can verify
+    // consent ownership before accepting the upload.  multer makes non-file
+    // FormData fields available in req.body after parsing.
+    if (consentEventId) {
+      formData.append('consentEventId', consentEventId)
+    }
 
     try {
       const res  = await apiFetch('/api/audio', { method: 'POST', body: formData })
@@ -366,7 +377,9 @@ function AudioRecorder({ onTranscriptReady, onStageChange, consentConfirmed = fa
       const res  = await apiFetch('/api/transcribe', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ objectKey: key }),
+        // Phase 7 / P0-1C-Fix-A: include consentEventId so the server can
+        // verify consent ownership before starting the AWS Transcribe job.
+        body: JSON.stringify({ objectKey: key, consentEventId }),
       })
       const data = await res.json()
 

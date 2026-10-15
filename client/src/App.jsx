@@ -489,6 +489,7 @@ function DashboardApp() {
               onTranscriptReady={handleTranscriptReady}
               onStageChange={handleStageChange}
               consentConfirmed={Boolean(consentEventId)}
+              consentEventId={consentEventId}
             />
           ) : (
             <div className="workspace-start-card">
