@@ -166,19 +166,38 @@ async function createConsultation(req, res) {
       return res.status(404).json({ success: false, message: 'Patient not found.' });
     }
 
-    // ── Pre-flight consent check (non-atomic read for early rejection) ────
-    // We read the event first to extract givenAt / userId for the Consultation
-    // fields and to return a clear error before doing any DB writes.
-    // The actual claim is performed atomically AFTER Consultation.create()
-    // using findOneAndUpdate with a conditional filter on status:'pending',
-    // which prevents two concurrent requests from both linking the same event.
+    // ── Consent-event handling for recorded consultations ─────────────────
+    //
+    // Phase 7 / P0-1C-Fix-A — claim-first ordering:
+    //
+    //   1. Read (lean) the event to get givenAt / userId for Consultation fields,
+    //      and to return a clear 400 before any DB write if the event is invalid.
+    //   2. Atomically claim the event with findOneAndUpdate({status:'pending'})
+    //      BEFORE creating the consultation.  This is the race-safe step:
+    //      only ONE concurrent request can flip the status from 'pending' to
+    //      'claiming'.  The loser gets null and returns 409.
+    //   3. Create the consultation.
+    //   4. Update the event to 'linked' with the new consultation ID.
+    //      If step 3 fails, restore the event to 'pending' so the doctor can
+    //      retry — but only if the event is still in 'claiming' state (i.e.,
+    //      nobody else has touched it in the meantime).
+    //
+    // Status transitions: pending → claiming → linked
+    //                                       ↘ pending   (on create failure)
+    //
+    // 'claiming' is a transient state used only within this request to prevent
+    // another concurrent request from seeing the event as 'pending' and also
+    // succeeding.
+
     let consentEventSnapshot = null;
+
     if (hasTranscript && consentEventId) {
+      // Step 1: pre-flight read — get the event data we need to copy.
       consentEventSnapshot = await RecordingConsent.findOne({
         _id:       consentEventId,
-        userId:    req.user.id,   // must belong to this doctor
-        patientId,                // must be for this patient
-        status:    'pending',     // must not already be linked
+        userId:    req.user.id,
+        patientId,
+        status:    'pending',
       }).lean();
 
       if (!consentEventSnapshot) {
@@ -187,67 +206,78 @@ async function createConsultation(req, res) {
           message: 'Recording consent event not found, does not belong to this user/patient, or has already been used.',
         });
       }
+
+      // Step 2: atomically claim — transition pending → claiming.
+      const claimed = await RecordingConsent.findOneAndUpdate(
+        {
+          _id:       consentEventSnapshot._id,
+          userId:    req.user.id,
+          patientId,
+          status:    'pending',          // conditional filter — race-safe
+        },
+        { $set: { status: 'claiming' } },
+        { new: false }                   // return old doc; null = already taken
+      );
+
+      if (!claimed) {
+        return res.status(409).json({
+          success: false,
+          message: 'Recording consent event was claimed by a concurrent request. Please start a new recording.',
+        });
+      }
     }
 
     // ── Create the consultation ──────────────────────────────────────────
-    const doc = await Consultation.create({
-      // userId always from verified token — never from the client.
-      userId:             req.user.id,
-      patientId,
-      consultationDate:   consultationDate ? new Date(consultationDate) : new Date(),
-      encounterType:      encounterType    ?? 'in_person',
-      transcript:         transcript       ?? '',
-      note:               note             ?? {},
-      status:             status           ?? 'draft',
-      approvedAt:         status === 'approved' ? new Date() : null,
-      approvedBy:         status === 'approved' ? req.user.id : null,
-      speakerUtterances:  speakerUtterances  ?? [],
-      detectedLanguages:  detectedLanguages  ?? [],
-      speakerRoleMapping: speakerRoleMapping ?? {},
-      // Consent fields — copied from the pre-flight snapshot (server clock),
-      // NOT from the client body.
-      recordingConsentGivenAt:     consentEventSnapshot ? consentEventSnapshot.givenAt  : null,
-      recordingConsentConfirmedBy: consentEventSnapshot ? consentEventSnapshot.userId   : null,
-    });
+    let doc;
+    try {
+      doc = await Consultation.create({
+        userId:             req.user.id,
+        patientId,
+        consultationDate:   consultationDate ? new Date(consultationDate) : new Date(),
+        encounterType:      encounterType    ?? 'in_person',
+        transcript:         transcript       ?? '',
+        note:               note             ?? {},
+        status:             status           ?? 'draft',
+        approvedAt:         status === 'approved' ? new Date() : null,
+        approvedBy:         status === 'approved' ? req.user.id : null,
+        speakerUtterances:  speakerUtterances  ?? [],
+        detectedLanguages:  detectedLanguages  ?? [],
+        speakerRoleMapping: speakerRoleMapping ?? {},
+        // Consent fields copied from server-side event snapshot (server clock).
+        recordingConsentGivenAt:     consentEventSnapshot ? consentEventSnapshot.givenAt  : null,
+        recordingConsentConfirmedBy: consentEventSnapshot ? consentEventSnapshot.userId   : null,
+      });
+    } catch (createErr) {
+      // Step 3 failed.  Restore the event to 'pending' so the doctor can retry,
+      // but only if it is still 'claiming' — do not clobber another request's state.
+      if (consentEventSnapshot) {
+        await RecordingConsent.findOneAndUpdate(
+          { _id: consentEventSnapshot._id, status: 'claiming', userId: req.user.id },
+          { $set: { status: 'pending' } }
+        ).catch((restoreErr) => {
+          console.error('[consultationController] failed to restore consent event:', restoreErr.message);
+        });
+      }
+      throw createErr;
+    }
 
-    // ── Atomically claim the consent event ───────────────────────────────
-    // Phase 7 / P0-1C-Fix-A:
-    // Replace the previous non-atomic findOne+save() pattern with a single
-    // findOneAndUpdate that uses a conditional filter on status:'pending'.
-    //
-    // If two concurrent POST /api/consultations requests both passed the
-    // pre-flight check above, only ONE of them will succeed here — the other
-    // will receive null (the event's status was already flipped to 'linked').
-    //
-    // In that race-losing case the consultation has already been created.
-    // We delete it to prevent an orphaned, consent-less consultation.
+    // ── Step 4: mark the event as fully linked ───────────────────────────
     if (consentEventSnapshot) {
-      const claimed = await RecordingConsent.findOneAndUpdate(
-        {
-          _id:    consentEventSnapshot._id,
-          userId: req.user.id,
-          status: 'pending',    // conditional filter — only succeeds if still pending
-        },
+      await RecordingConsent.findOneAndUpdate(
+        { _id: consentEventSnapshot._id, status: 'claiming', userId: req.user.id },
         {
           $set: {
             status:               'linked',
             linkedConsultationId: doc._id,
             linkedAt:             new Date(),
           },
-        },
-        { new: false }  // we don't need the updated document
-      );
-
-      if (!claimed) {
-        // Another concurrent request already claimed this event.
-        // Roll back: delete the just-created consultation so it doesn't persist
-        // without valid consent metadata.
-        await doc.deleteOne();
-        return res.status(409).json({
-          success: false,
-          message: 'Recording consent event was already used by a concurrent request. Please start a new recording.',
-        });
-      }
+        }
+      ).catch((linkErr) => {
+        // This is non-fatal — the consultation was created successfully.
+        // The event is stuck in 'claiming' and will require manual cleanup.
+        // Log so it can be found in audit.
+        console.error('[consultationController] failed to mark consent event linked:', linkErr.message);
+      });
     }
 
     return res.status(201).json({ success: true, consultation: doc });

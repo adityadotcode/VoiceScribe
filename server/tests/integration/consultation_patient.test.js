@@ -235,7 +235,11 @@ describe('POST /api/consultations — patientId required', () => {
 describe('POST /api/consultations — successful creation', () => {
   test('5. valid patientId owned by user → 201 with patientId persisted', async () => {
     Patient.findOne.mockReturnValueOnce(leanResult(makePatient()));
-    RecordingConsent.findOne.mockResolvedValueOnce(makeConsentEvent());
+    const ev = makeConsentEvent();
+    RecordingConsent.findOne.mockResolvedValueOnce(ev);
+    RecordingConsent.findOneAndUpdate
+      .mockResolvedValueOnce(ev)   // claim
+      .mockResolvedValueOnce(ev);  // link
     Consultation.create.mockResolvedValueOnce(makeConsultation());
 
     const res = await request(app)
@@ -252,7 +256,11 @@ describe('POST /api/consultations — successful creation', () => {
 
   test('6. userId always from token — client-supplied userId is ignored', async () => {
     Patient.findOne.mockReturnValueOnce(leanResult(makePatient()));
-    RecordingConsent.findOne.mockResolvedValueOnce(makeConsentEvent());
+    const ev = makeConsentEvent();
+    RecordingConsent.findOne.mockResolvedValueOnce(ev);
+    RecordingConsent.findOneAndUpdate
+      .mockResolvedValueOnce(ev)
+      .mockResolvedValueOnce(ev);
     Consultation.create.mockResolvedValueOnce(makeConsultation());
 
     await request(app)
@@ -540,10 +548,13 @@ describe('POST /api/consultations — recording consent (P0-1B)', () => {
     expect(createArg.recordingConsentConfirmedBy).not.toBe(ID_B);
   });
 
-  test('23. consent event is marked linked after successful consultation creation', async () => {
+  test('23. consent event is atomically linked after successful consultation creation', async () => {
     Patient.findOne.mockReturnValueOnce(leanResult(makePatient()));
     const event = makeConsentEvent();
     RecordingConsent.findOne.mockResolvedValueOnce(event);
+    RecordingConsent.findOneAndUpdate
+      .mockResolvedValueOnce(event)   // claim step succeeds
+      .mockResolvedValueOnce(event);  // link step succeeds
     Consultation.create.mockResolvedValueOnce(makeConsultation());
 
     await request(app)
@@ -551,9 +562,18 @@ describe('POST /api/consultations — recording consent (P0-1B)', () => {
       .set('Authorization', `Bearer ${tokenA}`)
       .send(validCreateBody);
 
-    expect(event.status).toBe('linked');
-    expect(event.linkedAt).toBeInstanceOf(Date);
-    expect(event.save).toHaveBeenCalledTimes(1);
+    // Both findOneAndUpdate calls must have been made
+    expect(RecordingConsent.findOneAndUpdate).toHaveBeenCalledTimes(2);
+
+    // Claim: pending → claiming
+    expect(RecordingConsent.findOneAndUpdate.mock.calls[0][0]).toMatchObject({ status: 'pending' });
+    expect(RecordingConsent.findOneAndUpdate.mock.calls[0][1]).toMatchObject({ $set: { status: 'claiming' } });
+
+    // Link: claiming → linked
+    expect(RecordingConsent.findOneAndUpdate.mock.calls[1][0]).toMatchObject({ status: 'claiming' });
+    expect(RecordingConsent.findOneAndUpdate.mock.calls[1][1]).toMatchObject({
+      $set: expect.objectContaining({ status: 'linked' }),
+    });
   });
 
   test('24. PUT /api/consultations/:id does not create or modify consent events', async () => {

@@ -401,13 +401,16 @@ describe('POST /api/consultations — consentEventId enforcement', () => {
     expect(res.body.message).toMatch(/already been used/i);
   });
 
-  test('17. valid consentEventId — consent is persisted and event is atomically linked', async () => {
+  test('17. valid consentEventId — atomically claimed then linked to consultation', async () => {
     Patient.findOne.mockReturnValueOnce(leanResult(makePatient()));
     const event = makeConsentEvent();
+    // Pre-flight read
     RecordingConsent.findOne.mockResolvedValueOnce(event);
+    // Step 2: claim (pending → claiming) succeeds
+    RecordingConsent.findOneAndUpdate
+      .mockResolvedValueOnce(event)   // claim step: truthy = success
+      .mockResolvedValueOnce(event);  // link step: pending→linked
     Consultation.create.mockResolvedValueOnce(makeConsultation());
-    // Atomic claim succeeds — returns the old doc (truthy)
-    RecordingConsent.findOneAndUpdate.mockResolvedValueOnce(event);
 
     const res = await request(app)
       .post('/api/consultations')
@@ -417,17 +420,23 @@ describe('POST /api/consultations — consentEventId enforcement', () => {
     expect(res.status).toBe(201);
     expect(res.body.success).toBe(true);
 
-    // Consultation.create received the consent data from the event snapshot
+    // Consultation.create received consent data from the event snapshot
     const createArg = Consultation.create.mock.calls[0][0];
     expect(createArg.recordingConsentGivenAt).toEqual(event.givenAt);
     expect(createArg.recordingConsentConfirmedBy).toBe(event.userId);
 
-    // Atomic findOneAndUpdate was called to link the event
-    expect(RecordingConsent.findOneAndUpdate).toHaveBeenCalledWith(
-      expect.objectContaining({ status: 'pending' }),
-      expect.objectContaining({ $set: expect.objectContaining({ status: 'linked' }) }),
-      expect.any(Object)
-    );
+    // findOneAndUpdate called twice: once for claim, once for link
+    expect(RecordingConsent.findOneAndUpdate).toHaveBeenCalledTimes(2);
+
+    // First call: claim — transitions pending → claiming
+    const claimCall = RecordingConsent.findOneAndUpdate.mock.calls[0];
+    expect(claimCall[0]).toMatchObject({ status: 'pending' });
+    expect(claimCall[1]).toMatchObject({ $set: { status: 'claiming' } });
+
+    // Second call: link — transitions claiming → linked
+    const linkCall = RecordingConsent.findOneAndUpdate.mock.calls[1];
+    expect(linkCall[0]).toMatchObject({ status: 'claiming' });
+    expect(linkCall[1]).toMatchObject({ $set: expect.objectContaining({ status: 'linked' }) });
   });
 
   test('18. recordingConsentGivenAt is taken from the event — not from the client body', async () => {
@@ -435,8 +444,10 @@ describe('POST /api/consultations — consentEventId enforcement', () => {
     const serverTimestamp = new Date('2026-09-01T09:00:00.000Z');
     const event = makeConsentEvent({ givenAt: serverTimestamp });
     RecordingConsent.findOne.mockResolvedValueOnce(event);
+    RecordingConsent.findOneAndUpdate
+      .mockResolvedValueOnce(event)
+      .mockResolvedValueOnce(event);
     Consultation.create.mockResolvedValueOnce(makeConsultation());
-    RecordingConsent.findOneAndUpdate.mockResolvedValueOnce(event);
 
     // Attacker tries to pass a fake consent timestamp
     await request(app)
@@ -457,8 +468,10 @@ describe('POST /api/consultations — consentEventId enforcement', () => {
     Patient.findOne.mockReturnValueOnce(leanResult(makePatient()));
     const event = makeConsentEvent({ userId: ID_A });
     RecordingConsent.findOne.mockResolvedValueOnce(event);
+    RecordingConsent.findOneAndUpdate
+      .mockResolvedValueOnce(event)
+      .mockResolvedValueOnce(event);
     Consultation.create.mockResolvedValueOnce(makeConsultation());
-    RecordingConsent.findOneAndUpdate.mockResolvedValueOnce(event);
 
     // Attacker tries to forge confirmedBy
     await request(app)
@@ -496,6 +509,9 @@ describe('POST /api/consultations — consentEventId enforcement', () => {
   test('21. RecordingConsent.findOne is called with userId + patientId + pending status', async () => {
     Patient.findOne.mockReturnValueOnce(leanResult(makePatient()));
     RecordingConsent.findOne.mockResolvedValueOnce(makeConsentEvent());
+    RecordingConsent.findOneAndUpdate
+      .mockResolvedValueOnce(makeConsentEvent())   // claim
+      .mockResolvedValueOnce(makeConsentEvent());  // link
     Consultation.create.mockResolvedValueOnce(makeConsultation());
 
     await request(app)

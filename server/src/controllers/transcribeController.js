@@ -10,10 +10,13 @@
  *   consentEventId {string}  Server-issued RecordingConsent _id (required).
  *
  * Enforcement:
- *   1. Validates consentEventId format (ObjectId).
+ *   1. Validates objectKey and consentEventId format.
  *   2. Loads the RecordingConsent document and verifies:
- *        • userId === req.user.id  (authenticated user owns the event)
- *        • status === 'pending'   (not already linked/consumed)
+ *        • userId === req.user.id    (token-authenticated owner)
+ *        • status === 'pending'      (not already linked)
+ *        • uploadedObjectKey === objectKey  (S3 key was uploaded for THIS event;
+ *              prevents an attacker from substituting a different audio file
+ *              after obtaining a legitimate consent event ID)
  *   3. Only then starts the AWS Transcribe job.
  *
  * Status is NOT changed here — the event stays 'pending' so transcription
@@ -52,17 +55,21 @@ async function postTranscription(req, res) {
 
   try {
     // ── 3. Verify the consent event ─────────────────────────────────────
-    // Same checks as the audio upload step: ownership + pending status.
+    // The query also checks uploadedObjectKey so that:
+    //   (a) the objectKey was genuinely produced by POST /api/audio for this event
+    //   (b) an attacker who guesses an objectKey cannot transcribe it without a
+    //       matching consent event that explicitly recorded that key
     const consentEvent = await RecordingConsent.findOne({
-      _id:    consentEventId,
-      userId: req.user.id,
-      status: 'pending',
+      _id:               consentEventId,
+      userId:            req.user.id,
+      status:            'pending',
+      uploadedObjectKey: objectKey,     // S3 key must match the uploaded object
     });
 
     if (!consentEvent) {
       return res.status(400).json({
         success: false,
-        message: 'Recording consent event not found, does not belong to this user, or has already been used.',
+        message: 'Recording consent event not found, does not belong to this user, has already been used, or the S3 object key does not match the upload.',
       });
     }
 

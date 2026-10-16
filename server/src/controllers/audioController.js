@@ -11,31 +11,29 @@
  *
  * Enforcement:
  *   1. Validates consentEventId format (ObjectId).
- *   2. Loads the RecordingConsent document and verifies:
- *        • _id matches the provided consentEventId
- *        • userId === req.user.id  (authenticated user owns the event)
- *        • status === 'pending'   (not already linked/consumed)
- *   3. Only then accepts the audio file and uploads to S3.
+ *   2. Verifies the consent event exists, belongs to the authenticated user,
+ *      and is in 'pending' status (not already linked or consumed).
+ *   3. Uploads the audio to S3.
+ *   4. Stores the resulting objectKey on the RecordingConsent document so the
+ *      transcription step can verify the S3 object belongs to this event.
  *
- * Note on patientId:
- *   The audio endpoint does not receive patientId — it only verifies that the
- *   consent event belongs to the authenticated user and is pending.  The full
- *   patientId cross-check occurs at POST /api/consultations where patientId is
- *   a required body field.  This two-layer approach matches the architecture
- *   constraint (multer runs before the body is parsed as JSON).
+ * Ownership notes:
+ *   • userId check: event.userId === req.user.id (from JWT, never from body).
+ *   • patientId cross-check: deferred to POST /api/consultations where
+ *     patientId is a required body field.
+ *   • S3 key ownership: recorded on the event at this step; verified at
+ *     POST /api/transcribe.
  *
  * Status is NOT changed here — the event stays 'pending' so upload retries
- * remain safe.  Linking happens atomically at POST /api/consultations.
+ * remain safe (a retry overwrites uploadedObjectKey).
  */
 
-const mongoose        = require('mongoose');
+const mongoose         = require('mongoose');
 const RecordingConsent = require('../models/RecordingConsent');
 const { uploadAudio }  = require('../services/s3Service');
 
 async function postAudio(req, res) {
   // ── 1. Validate consentEventId ──────────────────────────────────────────
-  // After multer processes the multipart body, non-file fields are available
-  // in req.body.  consentEventId is sent as a regular FormData field.
   const { consentEventId } = req.body ?? {};
 
   if (!consentEventId) {
@@ -62,13 +60,10 @@ async function postAudio(req, res) {
 
   try {
     // ── 3. Verify the consent event ─────────────────────────────────────
-    // Ownership: the event must belong to the authenticated user.
-    // Status:    must be 'pending' (not already linked).
-    // patientId cross-check is deferred to POST /api/consultations.
     const consentEvent = await RecordingConsent.findOne({
       _id:    consentEventId,
-      userId: req.user.id,
-      status: 'pending',
+      userId: req.user.id,   // ownership enforced via token — never from body
+      status: 'pending',     // must not already be linked
     });
 
     if (!consentEvent) {
@@ -80,6 +75,14 @@ async function postAudio(req, res) {
 
     // ── 4. Upload to S3 ─────────────────────────────────────────────────
     const objectKey = await uploadAudio(req.file);
+
+    // ── 5. Record the S3 key on the consent event ────────────────────────
+    // This associates the uploaded object with the consent event so the
+    // transcription step can verify the objectKey was legitimately obtained
+    // through this consent flow (not substituted by an attacker).
+    // Retry-safe: a re-upload simply overwrites the previous key.
+    consentEvent.uploadedObjectKey = objectKey;
+    await consentEvent.save();
 
     return res.json({
       success: true,

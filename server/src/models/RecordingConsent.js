@@ -83,10 +83,13 @@ const RecordingConsentSchema = new mongoose.Schema(
 
     // Workflow status.
     //   'pending'  — event created, not yet linked to a consultation.
+    //   'claiming' — atomically reserved by a createConsultation request in
+    //                progress; transitions to 'linked' on success or back to
+    //                'pending' if consultation creation fails.
     //   'linked'   — linked to a specific consultation; cannot be reused.
     status: {
       type:    String,
-      enum:    ['pending', 'linked'],
+      enum:    ['pending', 'claiming', 'linked'],
       default: 'pending',
     },
 
@@ -100,6 +103,15 @@ const RecordingConsentSchema = new mongoose.Schema(
     // Timestamp of when the event was linked to a consultation.
     linkedAt: {
       type:    Date,
+      default: null,
+    },
+
+    // S3 object key uploaded under this consent event.
+    // Set at POST /api/audio.  Verified at POST /api/transcribe to confirm
+    // the object being transcribed was actually uploaded for this event.
+    // Null until the upload step completes.
+    uploadedObjectKey: {
+      type:    String,
       default: null,
     },
   },
