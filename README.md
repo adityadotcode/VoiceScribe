@@ -1,6 +1,6 @@
 # VoiceScribe
 
-### AI-Assisted Clinical Documentation using AWS
+### AI-Assisted Clinical Documentation for doctors
 
 VoiceScribe is an AI-powered clinical documentation assistant that converts doctor-patient conversations into structured, reviewable clinical notes.
 
