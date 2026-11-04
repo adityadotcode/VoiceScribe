@@ -58,6 +58,27 @@ const PatientSchema = new mongoose.Schema(
       type:    Boolean,
       default: false,
     },
+
+    // ── Patient portal invite ─────────────────────────────────────────────
+    // A doctor can issue a one-time invite that lets the patient register
+    // a PatientAccount linked to this document.
+    //
+    // portalInviteTokenHash: bcrypt hash of the raw invite token shown to
+    //   the doctor.  The raw token is shown once and never stored in plain text.
+    // portalInviteExpiresAt: short TTL (e.g. 72 hours).
+    // portalInviteUsedAt:    set when the patient registers; token is then void.
+    portalInviteTokenHash: {
+      type:    String,
+      default: null,
+    },
+    portalInviteExpiresAt: {
+      type:    Date,
+      default: null,
+    },
+    portalInviteUsedAt: {
+      type:    Date,
+      default: null,
+    },
   },
   {
     timestamps: true,

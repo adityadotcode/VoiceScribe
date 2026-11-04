@@ -7,6 +7,7 @@ const bedrockRoutes            = require('./bedrockRoutes');
 const consultationRoutes       = require('./consultationRoutes');
 const patientRoutes            = require('./patientRoutes');
 const recordingConsentRoutes   = require('./recordingConsentRoutes');
+const patientPortalRoutes      = require('./patientPortalRoutes');
 const { authenticate }         = require('../middleware/authenticate');
 
 const router = express.Router();
@@ -15,7 +16,10 @@ const router = express.Router();
 router.use('/health', healthRoutes);
 router.use('/auth',   authRoutes);
 
-// ── Authenticated routes ──────────────────────────────────────────────────
+// ── Patient portal — has its own auth sub-routes inside ───────────────────
+router.use('/patient-portal', patientPortalRoutes);
+
+// ── Authenticated routes (doctor) ─────────────────────────────────────────
 // All routes below require a valid access token.
 router.use(authenticate);
 
