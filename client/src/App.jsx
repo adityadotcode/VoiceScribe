@@ -4,8 +4,10 @@ import AudioRecorder from './AudioRecorder.jsx'
 import ClinicalNoteReview from './ClinicalNoteReview.jsx'
 import Dashboard from './Dashboard.jsx'
 import { AuthProvider, useAuth } from './contexts/AuthContext.jsx'
+import { PatientPortalAuthProvider } from './contexts/PatientPortalAuthContext.jsx'
 import { useTheme } from './contexts/ThemeContext.jsx'
 import PrivateRoute from './components/layout/PrivateRoute.jsx'
+import PatientPortalRoute from './components/layout/PatientPortalRoute.jsx'
 import LoginPage from './pages/LoginPage.jsx'
 import RegisterPage from './pages/RegisterPage.jsx'
 import PatientListPage from './pages/PatientListPage.jsx'
@@ -13,6 +15,10 @@ import NewPatientPage from './pages/NewPatientPage.jsx'
 import PatientProfilePage from './pages/PatientProfilePage.jsx'
 import NewConsultationPage from './pages/NewConsultationPage.jsx'
 import ConsultationDetailPage from './pages/ConsultationDetailPage.jsx'
+import PatientLoginPage from './pages/portal/PatientLoginPage.jsx'
+import PatientRegisterPage from './pages/portal/PatientRegisterPage.jsx'
+import PatientHistoryPage from './pages/portal/PatientHistoryPage.jsx'
+import PatientConsultationPage from './pages/portal/PatientConsultationPage.jsx'
 import { apiFetch, apiUrl } from './api.js'
 import './App.css'
 
@@ -529,11 +535,11 @@ export default function App() {
     <BrowserRouter>
       <AuthProvider>
         <Routes>
-          {/* Public routes */}
+          {/* Public routes — doctor auth */}
           <Route path="/login"    element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />
 
-          {/* Protected routes */}
+          {/* Protected routes — doctor */}
           <Route element={<PrivateRoute />}>
             <Route path="/dashboard"           element={<DashboardApp />} />
             <Route path="/consultation/new"    element={<NewConsultationPage />} />
@@ -542,6 +548,27 @@ export default function App() {
             <Route path="/patients/new"        element={<NewPatientPage />} />
             <Route path="/patients/:id"        element={<PatientProfilePage />} />
           </Route>
+
+          {/* Patient portal — own auth provider and route guard */}
+          <Route
+            path="/portal/*"
+            element={
+              <PatientPortalAuthProvider>
+                <Routes>
+                  {/* Public portal routes */}
+                  <Route path="login"    element={<PatientLoginPage />} />
+                  <Route path="register" element={<PatientRegisterPage />} />
+                  {/* Protected portal routes */}
+                  <Route element={<PatientPortalRoute />}>
+                    <Route path="history"                  element={<PatientHistoryPage />} />
+                    <Route path="consultation/:id"         element={<PatientConsultationPage />} />
+                  </Route>
+                  {/* Default inside portal */}
+                  <Route path="*" element={<Navigate to="/portal/login" replace />} />
+                </Routes>
+              </PatientPortalAuthProvider>
+            }
+          />
 
           {/* Default redirect */}
           <Route path="*" element={<Navigate to="/dashboard" replace />} />

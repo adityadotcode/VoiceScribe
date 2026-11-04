@@ -5088,3 +5088,128 @@
   padding: 8px 12px;
   margin-top: 10px;
 }
+
+/* ============================================================
+   Patient Portal
+   Prefix: portal-
+   ============================================================ */
+
+.portal-page {
+  min-height: 100vh;
+  background: var(--surface-2, #f7f8fa);
+  display: flex;
+  flex-direction: column;
+}
+
+/* ── Header ── */
+.portal-header {
+  background: var(--surface, #fff);
+  border-bottom: 1px solid var(--border);
+  padding: 12px 24px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+.portal-brand { display: flex; align-items: center; gap: 8px; flex: 1; }
+.portal-brand-name { font-size: 15px; font-weight: 700; color: var(--text-h); }
+.portal-header-right { display: flex; align-items: center; gap: 12px; }
+.portal-user-name { font-size: 13px; color: var(--text-sub); }
+.portal-logout-btn {
+  appearance: none; border: 1px solid var(--border); border-radius: var(--radius-md);
+  background: var(--surface); color: var(--text); font: inherit; font-size: 13px;
+  padding: 6px 14px; cursor: pointer;
+}
+.portal-logout-btn:hover { background: var(--surface-hover); }
+.portal-back-btn {
+  appearance: none; border: none; background: transparent; color: var(--brand);
+  font: inherit; font-size: 13px; cursor: pointer; padding: 0;
+}
+
+/* ── Main layout ── */
+.portal-main {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 24px 20px 48px;
+  width: 100%;
+}
+
+/* ── Loading / error ── */
+.portal-loading { font-size: 14px; color: var(--text-sub); text-align: center; padding: 40px 0; }
+.portal-error {
+  background: var(--red-bg, #fff0f0); border: 1px solid var(--red-border, #f5c2c2);
+  color: var(--red, #c0392b); border-radius: var(--radius-md); padding: 12px 16px;
+  font-size: 13px; margin-bottom: 16px;
+}
+
+/* ── Patient card ── */
+.portal-patient-card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius-lg); padding: 20px 24px; margin-bottom: 20px;
+}
+.portal-section-title {
+  font-size: 18px; font-weight: 700; color: var(--text-h); margin: 0 0 12px;
+}
+.portal-meta { display: flex; flex-wrap: wrap; gap: 16px; margin: 0; }
+.portal-meta-row { display: flex; flex-direction: column; gap: 2px; }
+.portal-meta-row dt { font-size: 10px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.07em; color: var(--text-sub); }
+.portal-meta-row dd { font-size: 14px; color: var(--text-h); margin: 0; }
+
+/* ── Consultation list ── */
+.portal-history { background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius-lg); padding: 20px 24px; }
+.portal-empty { font-size: 14px; color: var(--text-sub); margin: 0; }
+.portal-consult-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 12px; }
+.portal-consult-item {
+  border: 1px solid var(--border); border-radius: var(--radius-md);
+  padding: 14px 16px; display: flex; flex-direction: column; gap: 6px;
+}
+.portal-consult-meta { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.portal-consult-date { font-size: 14px; font-weight: 600; color: var(--text-h); }
+.portal-consult-type { font-size: 12px; color: var(--text-sub); }
+.portal-consult-badge {
+  font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 999px;
+}
+.portal-consult-badge--correction {
+  background: var(--amber-bg); color: var(--amber); border: 1px solid var(--amber-border);
+}
+.portal-consult-complaint { font-size: 13px; color: var(--text); margin: 0; }
+.portal-consult-open {
+  font-size: 13px; font-weight: 600; color: var(--brand); text-decoration: none;
+  align-self: flex-start;
+}
+.portal-consult-open:hover { text-decoration: underline; }
+
+/* ── Consultation detail ── */
+.portal-correction-notice {
+  background: var(--amber-bg); border: 1px solid var(--amber-border); color: var(--amber);
+  border-radius: var(--radius-md); padding: 10px 14px; font-size: 13px; margin-bottom: 12px;
+}
+.portal-detail-card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius-lg); padding: 20px 24px; margin-bottom: 16px;
+}
+.portal-detail-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 12px; margin: 0; }
+.portal-detail-fields { display: flex; flex-direction: column; gap: 12px; margin: 0; }
+.portal-detail-field { display: flex; flex-direction: column; gap: 3px; }
+.portal-detail-label { font-size: 10px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.07em; color: var(--text-sub); }
+.portal-detail-value { font-size: 13px; color: var(--text-h); margin: 0; white-space: pre-wrap; }
+.portal-pill-list { list-style: none; padding: 0; margin: 0; display: flex; flex-wrap: wrap; gap: 6px; }
+.portal-pill {
+  font-size: 12px; background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: 999px; padding: 2px 10px; color: var(--text);
+}
+.portal-disclaimer {
+  font-size: 12px; color: var(--text-sub); font-style: italic;
+  border-top: 1px solid var(--border); padding-top: 16px; margin-top: 8px;
+}
+
+/* ── Auth additions for portal ── */
+.auth-sub-hint { font-size: 13px; color: var(--text-sub); margin: -8px 0 16px; }
+
+@media (max-width: 600px) {
+  .portal-header { padding: 10px 16px; }
+  .portal-main { padding: 16px 16px 40px; }
+  .portal-patient-card, .portal-history, .portal-detail-card { padding: 14px 16px; }
+}
