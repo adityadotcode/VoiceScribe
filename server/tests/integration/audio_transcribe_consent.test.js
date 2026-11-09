@@ -407,7 +407,7 @@ describe('B. POST /api/transcribe — consent enforcement', () => {
   });
 
   test('B7. valid consentEventId + valid objectKey → 200 with transcript', async () => {
-    RecordingConsent.findOne.mockResolvedValueOnce(makeConsentEvent());
+    RecordingConsent.findOne.mockReturnValueOnce(leanResult(makeConsentEvent()));
     transcribeAudio.mockResolvedValueOnce(VALID_TRANSCRIBE_RESULT);
 
     const res = await request(app)
@@ -426,8 +426,8 @@ describe('B. POST /api/transcribe — consent enforcement', () => {
 
   test('B8. transcription retry with same pending event succeeds', async () => {
     RecordingConsent.findOne
-      .mockResolvedValueOnce(makeConsentEvent())
-      .mockResolvedValueOnce(makeConsentEvent());
+      .mockReturnValueOnce(leanResult(makeConsentEvent()))
+      .mockReturnValueOnce(leanResult(makeConsentEvent()));
     transcribeAudio
       .mockResolvedValueOnce(VALID_TRANSCRIBE_RESULT)
       .mockResolvedValueOnce(VALID_TRANSCRIBE_RESULT);
@@ -447,7 +447,7 @@ describe('B. POST /api/transcribe — consent enforcement', () => {
   });
 
   test('B9. transcription failure returns safe generic message', async () => {
-    RecordingConsent.findOne.mockResolvedValueOnce(makeConsentEvent());
+    RecordingConsent.findOne.mockReturnValueOnce(leanResult(makeConsentEvent()));
     transcribeAudio.mockRejectedValueOnce(
       new Error('InternalConnectionError: socket closed')
     );
@@ -484,11 +484,8 @@ describe('C. POST /api/consultations — atomic linking', () => {
     // but by the time we call findOneAndUpdate another request claimed it first.
     Patient.findOne.mockReturnValueOnce(leanResult(makePatient()));
     // Pre-flight findOne (lean) returns the pending event
-    RecordingConsent.findOne.mockResolvedValueOnce(makeConsentEvent());
-    // Consultation is created
-    const doc = makeConsultation();
-    Consultation.create.mockResolvedValueOnce(doc);
-    // Atomic claim fails — another request already linked the event
+    RecordingConsent.findOne.mockReturnValueOnce(leanResult(makeConsentEvent()));
+    // Atomic claim fails — another request already claimed the event
     RecordingConsent.findOneAndUpdate.mockResolvedValueOnce(null);
 
     const res = await request(app)
@@ -498,16 +495,19 @@ describe('C. POST /api/consultations — atomic linking', () => {
 
     expect(res.status).toBe(409);
     expect(res.body.message).toMatch(/concurrent request/i);
-    // Consultation must be rolled back
-    expect(doc.deleteOne).toHaveBeenCalledTimes(1);
   });
 
   test('C2. failed consultation create leaves event still pending (recoverable)', async () => {
-    // If Consultation.create throws, findOneAndUpdate is never called,
-    // so the event stays pending and the doctor can retry.
+    // If Consultation.create throws after the claim step, the controller
+    // restores the event to 'pending' via a second findOneAndUpdate.
     Patient.findOne.mockReturnValueOnce(leanResult(makePatient()));
-    RecordingConsent.findOne.mockResolvedValueOnce(makeConsentEvent());
+    RecordingConsent.findOne.mockReturnValueOnce(leanResult(makeConsentEvent()));
+    // Claim step succeeds
+    RecordingConsent.findOneAndUpdate.mockResolvedValueOnce(makeConsentEvent());
+    // Consultation creation fails
     Consultation.create.mockRejectedValueOnce(new Error('DB write error'));
+    // Restore step (claiming → pending) — called in catch block
+    RecordingConsent.findOneAndUpdate.mockResolvedValueOnce(null);
 
     const res = await request(app)
       .post('/api/consultations')
@@ -515,17 +515,17 @@ describe('C. POST /api/consultations — atomic linking', () => {
       .send(RECORDED_BODY);
 
     expect(res.status).toBe(500);
-    // findOneAndUpdate never reached
-    expect(RecordingConsent.findOneAndUpdate).not.toHaveBeenCalled();
   });
 
   test('C3. successful create + atomic link → 201, findOneAndUpdate called with correct filter', async () => {
     Patient.findOne.mockReturnValueOnce(leanResult(makePatient()));
     const event = makeConsentEvent();
-    RecordingConsent.findOne.mockResolvedValueOnce(event);
+    RecordingConsent.findOne.mockReturnValueOnce(leanResult(event));
+    // Claim step (pending → claiming)
+    RecordingConsent.findOneAndUpdate
+      .mockResolvedValueOnce(event)   // claim succeeds
+      .mockResolvedValueOnce(event);  // link succeeds (claiming → linked)
     Consultation.create.mockResolvedValueOnce(makeConsultation());
-    // findOneAndUpdate returns the old doc (non-null = success)
-    RecordingConsent.findOneAndUpdate.mockResolvedValueOnce(event);
 
     const res = await request(app)
       .post('/api/consultations')
@@ -534,17 +534,18 @@ describe('C. POST /api/consultations — atomic linking', () => {
 
     expect(res.status).toBe(201);
 
-    // Verify the atomic claim used correct filter and update
-    expect(RecordingConsent.findOneAndUpdate).toHaveBeenCalledWith(
-      expect.objectContaining({
-        userId: ID_A,
-        status: 'pending',
-      }),
-      expect.objectContaining({
-        $set: expect.objectContaining({ status: 'linked' }),
-      }),
-      expect.any(Object)
-    );
+    // findOneAndUpdate called twice: claim then link
+    expect(RecordingConsent.findOneAndUpdate).toHaveBeenCalledTimes(2);
+
+    // First call: claim — transitions pending → claiming
+    const claimCall = RecordingConsent.findOneAndUpdate.mock.calls[0];
+    expect(claimCall[0]).toMatchObject({ status: 'pending' });
+    expect(claimCall[1]).toMatchObject({ $set: { status: 'claiming' } });
+
+    // Second call: link — transitions claiming → linked
+    const linkCall = RecordingConsent.findOneAndUpdate.mock.calls[1];
+    expect(linkCall[0]).toMatchObject({ status: 'claiming' });
+    expect(linkCall[1]).toMatchObject({ $set: expect.objectContaining({ status: 'linked' }) });
   });
 
   test('C4. manual consultation (no transcript) — no RecordingConsent queries at all', async () => {

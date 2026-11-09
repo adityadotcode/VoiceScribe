@@ -47,10 +47,11 @@ const Consultation = require('../../src/models/Consultation');
 // Phase 7 / P0-1B — consent event model mock
 jest.mock('../../src/models/RecordingConsent', () => {
   const mockFn = jest.fn();
-  mockFn.findOne = jest.fn();
-  mockFn.create  = jest.fn();
-  mockFn.WORDING_VERSION = 'v1';
-  mockFn.WORDING_TEXT    = 'I confirm that the patient has been informed…';
+  mockFn.findOne          = jest.fn();
+  mockFn.findOneAndUpdate = jest.fn();   // required by claim-first lifecycle
+  mockFn.create           = jest.fn();
+  mockFn.WORDING_VERSION  = 'v1';
+  mockFn.WORDING_TEXT     = 'I confirm that the patient has been informed…';
   return mockFn;
 });
 const RecordingConsent = require('../../src/models/RecordingConsent');
@@ -236,7 +237,7 @@ describe('POST /api/consultations — successful creation', () => {
   test('5. valid patientId owned by user → 201 with patientId persisted', async () => {
     Patient.findOne.mockReturnValueOnce(leanResult(makePatient()));
     const ev = makeConsentEvent();
-    RecordingConsent.findOne.mockResolvedValueOnce(ev);
+    RecordingConsent.findOne.mockReturnValueOnce(leanResult(ev));
     RecordingConsent.findOneAndUpdate
       .mockResolvedValueOnce(ev)   // claim
       .mockResolvedValueOnce(ev);  // link
@@ -257,7 +258,7 @@ describe('POST /api/consultations — successful creation', () => {
   test('6. userId always from token — client-supplied userId is ignored', async () => {
     Patient.findOne.mockReturnValueOnce(leanResult(makePatient()));
     const ev = makeConsentEvent();
-    RecordingConsent.findOne.mockResolvedValueOnce(ev);
+    RecordingConsent.findOne.mockReturnValueOnce(leanResult(ev));
     RecordingConsent.findOneAndUpdate
       .mockResolvedValueOnce(ev)
       .mockResolvedValueOnce(ev);
@@ -499,7 +500,7 @@ describe('POST /api/consultations — recording consent (P0-1B)', () => {
 
   test('20. consentEventId not found / belongs to another user → 400', async () => {
     Patient.findOne.mockReturnValueOnce(leanResult(makePatient()));
-    RecordingConsent.findOne.mockResolvedValueOnce(null);
+    RecordingConsent.findOne.mockReturnValueOnce(leanResult(null));
 
     const res = await request(app)
       .post('/api/consultations')
@@ -514,7 +515,10 @@ describe('POST /api/consultations — recording consent (P0-1B)', () => {
     Patient.findOne.mockReturnValueOnce(leanResult(makePatient()));
     const serverTime = new Date('2026-09-01T09:00:00.000Z');
     const event = makeConsentEvent({ givenAt: serverTime });
-    RecordingConsent.findOne.mockResolvedValueOnce(event);
+    RecordingConsent.findOne.mockReturnValueOnce(leanResult(event));
+    RecordingConsent.findOneAndUpdate
+      .mockResolvedValueOnce(event)   // claim
+      .mockResolvedValueOnce(event);  // link
     Consultation.create.mockResolvedValueOnce(makeConsultation());
 
     await request(app)
@@ -535,7 +539,10 @@ describe('POST /api/consultations — recording consent (P0-1B)', () => {
   test('22. recordingConsentConfirmedBy is from the event — never from the client body', async () => {
     Patient.findOne.mockReturnValueOnce(leanResult(makePatient()));
     const event = makeConsentEvent({ userId: ID_A });
-    RecordingConsent.findOne.mockResolvedValueOnce(event);
+    RecordingConsent.findOne.mockReturnValueOnce(leanResult(event));
+    RecordingConsent.findOneAndUpdate
+      .mockResolvedValueOnce(event)   // claim
+      .mockResolvedValueOnce(event);  // link
     Consultation.create.mockResolvedValueOnce(makeConsultation());
 
     await request(app)
@@ -551,7 +558,7 @@ describe('POST /api/consultations — recording consent (P0-1B)', () => {
   test('23. consent event is atomically linked after successful consultation creation', async () => {
     Patient.findOne.mockReturnValueOnce(leanResult(makePatient()));
     const event = makeConsentEvent();
-    RecordingConsent.findOne.mockResolvedValueOnce(event);
+    RecordingConsent.findOne.mockReturnValueOnce(leanResult(event));
     RecordingConsent.findOneAndUpdate
       .mockResolvedValueOnce(event)   // claim step succeeds
       .mockResolvedValueOnce(event);  // link step succeeds

@@ -54,8 +54,9 @@ const Consultation = require('../../src/models/Consultation');
 jest.mock('../../src/models/RecordingConsent', () => {
   const mockFn = jest.fn();
   // Attach static exports
-  mockFn.findOne = jest.fn();
-  mockFn.create  = jest.fn();
+  mockFn.findOne          = jest.fn();
+  mockFn.findOneAndUpdate = jest.fn();   // required by claim-first lifecycle
+  mockFn.create           = jest.fn();
   mockFn.WORDING_VERSION = 'v1';
   mockFn.WORDING_TEXT    =
     'I confirm that the patient has been informed that this consultation will ' +
@@ -353,7 +354,7 @@ describe('POST /api/consultations — consentEventId enforcement', () => {
   test('14. consentEventId not found / belongs to another user → 400', async () => {
     Patient.findOne.mockReturnValueOnce(leanResult(makePatient()));
     // RecordingConsent.findOne returns null — event not found or foreign user
-    RecordingConsent.findOne.mockResolvedValueOnce(null);
+    RecordingConsent.findOne.mockReturnValueOnce(leanResult(null));
 
     const res = await request(app)
       .post('/api/consultations')
@@ -368,7 +369,7 @@ describe('POST /api/consultations — consentEventId enforcement', () => {
     Patient.findOne.mockReturnValueOnce(leanResult(makePatient()));
     // RecordingConsent.findOne uses { _id, userId, patientId, status:'pending' }
     // If patientId does not match the query returns null
-    RecordingConsent.findOne.mockResolvedValueOnce(null);
+    RecordingConsent.findOne.mockReturnValueOnce(leanResult(null));
 
     const res = await request(app)
       .post('/api/consultations')
@@ -390,7 +391,7 @@ describe('POST /api/consultations — consentEventId enforcement', () => {
     Patient.findOne.mockReturnValueOnce(leanResult(makePatient()));
     // Already-linked events have status='linked' — the query includes status:'pending'
     // so they return null and cannot be reused.
-    RecordingConsent.findOne.mockResolvedValueOnce(null);
+    RecordingConsent.findOne.mockReturnValueOnce(leanResult(null));
 
     const res = await request(app)
       .post('/api/consultations')
@@ -404,12 +405,12 @@ describe('POST /api/consultations — consentEventId enforcement', () => {
   test('17. valid consentEventId — atomically claimed then linked to consultation', async () => {
     Patient.findOne.mockReturnValueOnce(leanResult(makePatient()));
     const event = makeConsentEvent();
-    // Pre-flight read
-    RecordingConsent.findOne.mockResolvedValueOnce(event);
+    // Pre-flight read — controller chains .lean()
+    RecordingConsent.findOne.mockReturnValueOnce(leanResult(event));
     // Step 2: claim (pending → claiming) succeeds
     RecordingConsent.findOneAndUpdate
       .mockResolvedValueOnce(event)   // claim step: truthy = success
-      .mockResolvedValueOnce(event);  // link step: pending→linked
+      .mockResolvedValueOnce(event);  // link step: claiming → linked
     Consultation.create.mockResolvedValueOnce(makeConsultation());
 
     const res = await request(app)
@@ -443,7 +444,7 @@ describe('POST /api/consultations — consentEventId enforcement', () => {
     Patient.findOne.mockReturnValueOnce(leanResult(makePatient()));
     const serverTimestamp = new Date('2026-09-01T09:00:00.000Z');
     const event = makeConsentEvent({ givenAt: serverTimestamp });
-    RecordingConsent.findOne.mockResolvedValueOnce(event);
+    RecordingConsent.findOne.mockReturnValueOnce(leanResult(event));
     RecordingConsent.findOneAndUpdate
       .mockResolvedValueOnce(event)
       .mockResolvedValueOnce(event);
@@ -467,7 +468,7 @@ describe('POST /api/consultations — consentEventId enforcement', () => {
   test('19. recordingConsentConfirmedBy is from the event, never from the client body', async () => {
     Patient.findOne.mockReturnValueOnce(leanResult(makePatient()));
     const event = makeConsentEvent({ userId: ID_A });
-    RecordingConsent.findOne.mockResolvedValueOnce(event);
+    RecordingConsent.findOne.mockReturnValueOnce(leanResult(event));
     RecordingConsent.findOneAndUpdate
       .mockResolvedValueOnce(event)
       .mockResolvedValueOnce(event);
@@ -508,7 +509,7 @@ describe('POST /api/consultations — consentEventId enforcement', () => {
 
   test('21. RecordingConsent.findOne is called with userId + patientId + pending status', async () => {
     Patient.findOne.mockReturnValueOnce(leanResult(makePatient()));
-    RecordingConsent.findOne.mockResolvedValueOnce(makeConsentEvent());
+    RecordingConsent.findOne.mockReturnValueOnce(leanResult(makeConsentEvent()));
     RecordingConsent.findOneAndUpdate
       .mockResolvedValueOnce(makeConsentEvent())   // claim
       .mockResolvedValueOnce(makeConsentEvent());  // link
