@@ -91,7 +91,9 @@ const { transcribeAudio } = require('../../src/services/transcribeService');
 
 let app;
 beforeAll(() => { app = require('../../src/app'); });
-beforeEach(() => jest.clearAllMocks());
+// resetAllMocks clears both call history AND queued mockResolvedValueOnce
+// implementations, preventing stale mocks from leaking between tests.
+beforeEach(() => jest.resetAllMocks());
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -381,6 +383,7 @@ describe('B. POST /api/transcribe — consent enforcement', () => {
   });
 
   test('B5. consentEventId belongs to another user → 400', async () => {
+    // transcribeController does NOT use .lean() — use mockResolvedValueOnce directly
     RecordingConsent.findOne.mockResolvedValueOnce(null);
 
     const res = await request(app)
@@ -407,7 +410,11 @@ describe('B. POST /api/transcribe — consent enforcement', () => {
   });
 
   test('B7. valid consentEventId + valid objectKey → 200 with transcript', async () => {
-    RecordingConsent.findOne.mockReturnValueOnce(leanResult(makeConsentEvent()));
+    // Controller uses RecordingConsent.findOne() with no .lean() — use mockResolvedValueOnce.
+    // The query includes { uploadedObjectKey: objectKey } so the fixture must carry that field.
+    RecordingConsent.findOne.mockResolvedValueOnce(
+      makeConsentEvent({ uploadedObjectKey: 'consultations/test.webm' })
+    );
     transcribeAudio.mockResolvedValueOnce(VALID_TRANSCRIBE_RESULT);
 
     const res = await request(app)
@@ -425,9 +432,10 @@ describe('B. POST /api/transcribe — consent enforcement', () => {
   });
 
   test('B8. transcription retry with same pending event succeeds', async () => {
+    // Both calls: no .lean(), uploadedObjectKey must match
     RecordingConsent.findOne
-      .mockReturnValueOnce(leanResult(makeConsentEvent()))
-      .mockReturnValueOnce(leanResult(makeConsentEvent()));
+      .mockResolvedValueOnce(makeConsentEvent({ uploadedObjectKey: 'consultations/test.webm' }))
+      .mockResolvedValueOnce(makeConsentEvent({ uploadedObjectKey: 'consultations/test.webm' }));
     transcribeAudio
       .mockResolvedValueOnce(VALID_TRANSCRIBE_RESULT)
       .mockResolvedValueOnce(VALID_TRANSCRIBE_RESULT);
@@ -447,7 +455,10 @@ describe('B. POST /api/transcribe — consent enforcement', () => {
   });
 
   test('B9. transcription failure returns safe generic message', async () => {
-    RecordingConsent.findOne.mockReturnValueOnce(leanResult(makeConsentEvent()));
+    // No .lean() on the controller; uploadedObjectKey must match so the event is found
+    RecordingConsent.findOne.mockResolvedValueOnce(
+      makeConsentEvent({ uploadedObjectKey: 'consultations/test.webm' })
+    );
     transcribeAudio.mockRejectedValueOnce(
       new Error('InternalConnectionError: socket closed')
     );

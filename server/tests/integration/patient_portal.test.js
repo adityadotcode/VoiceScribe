@@ -179,17 +179,14 @@ describe('A. POST /api/patient-portal/auth/invite (doctor-only)', () => {
   });
 
   test('A2. patient token cannot issue invite → 401', async () => {
+    // The patient account's _id (ACCOUNT_ID) does not own any Patient record,
+    // so Patient.findOne({ _id, userId: ACCOUNT_ID }) returns null → 404.
+    // Set mock BEFORE the request so it isn't left in the queue for later tests.
+    Patient.findOne.mockResolvedValueOnce(null); // ACCOUNT_ID !== DOCTOR_ID
     const res = await request(app)
       .post('/api/patient-portal/auth/invite')
       .set('Authorization', `Bearer ${PATIENT_TOKEN}`)
       .send({ patientId: PATIENT_ID });
-    // Patient token goes through authenticate middleware which passes,
-    // but the route uses authenticate (doctor auth) — patient token has
-    // role:'patient' which the authenticate middleware accepts (it does
-    // not enforce role). However the route is under authenticate, so we
-    // verify the invite controller checks patient ownership against req.user.id.
-    // Doctor owns the patient; patient account does not.
-    Patient.findOne.mockResolvedValueOnce(null); // ACCOUNT_ID !== DOCTOR_ID
     expect([400, 401, 404]).toContain(res.status);
   });
 
@@ -276,8 +273,8 @@ describe('B. POST /api/patient-portal/auth/register', () => {
   });
 
   test('B4. invalid/expired invite token → 400', async () => {
-    // No candidates returned
-    Patient.find.mockResolvedValueOnce([]);
+    // register() calls Patient.find({...}).lean() — must return a query-like object
+    Patient.find.mockReturnValueOnce({ lean: () => Promise.resolve([]) });
     const res = await request(app)
       .post('/api/patient-portal/auth/register')
       .send({ inviteToken: 'badinvite', email: 'p@test.com', password: 'pass1234', displayName: 'Alice' });
@@ -291,7 +288,8 @@ describe('B. POST /api/patient-portal/auth/register', () => {
       portalInviteExpiresAt: new Date(Date.now() + 3600000),
       portalInviteUsedAt:    null,
     });
-    Patient.find.mockResolvedValueOnce([patient]);
+    // register() calls Patient.find({...}).lean() — must return a query-like object
+    Patient.find.mockReturnValueOnce({ lean: () => Promise.resolve([patient]) });
     bcrypt.compare.mockResolvedValueOnce(true); // token matches
     PatientAccount.findOne.mockResolvedValueOnce(null); // no email conflict
     PatientAccount.create.mockResolvedValueOnce(makeAccount());
@@ -365,6 +363,7 @@ describe('C. POST /api/patient-portal/auth/login', () => {
   });
 
   test('C6. patient login token has role:patient in JWT payload', async () => {
+    // C5 consumed its own bcrypt.compare.mockResolvedValueOnce(true); set a fresh one here.
     PatientAccount.findOne.mockResolvedValueOnce(makeAccount());
     bcrypt.compare.mockResolvedValueOnce(true);
     const res = await request(app)
