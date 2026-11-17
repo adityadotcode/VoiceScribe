@@ -1,15 +1,19 @@
 /**
- * PatientProfilePage — Patient 360° view (Patient 360.2 / Phase 6A)
+ * PatientProfilePage — Patient 360° view (Patient 360.2 / Phase 6A / Milestone 1)
  *
  * Loads a single call to GET /api/patients/:id/overview which returns
  * the patient record, aggregate statistics, latest effective approved
  * consultation, and 5 most recent consultations — all in one round-trip.
+ *
+ * Milestone 1 addition:
+ *   PortalInvitePanel — allows the doctor to issue a patient portal invite.
  *
  * Layout:
  *   ┌ Page header (← Patients | Edit patient)
  *   ├ Archived banner (conditional)
  *   ├ Patient header  (name, DOB, sex, MR, phone)
  *   ├ Statistics cards (total / approved / draft / last visit)
+ *   ├ Portal access section (PortalInvitePanel — Milestone 1)
  *   ├ Latest approved visit (chief complaint, symptoms, meds, assessment, follow-up)
  *   ├ What changed since last visit? (Phase 6A — ChangeSummaryPanel, user-triggered)
  *   └ Recent consultations timeline (up to 5, correction-aware)
@@ -23,6 +27,7 @@ import {
   apiGetPatientOverview,
   apiUpdatePatient,
 } from '../services/api/patients.js';
+import { apiIssueInvite } from '../services/api/patientPortal.js';
 import ChangeSummaryPanel from '../components/consultation/ChangeSummaryPanel.jsx';
 
 // ---------------------------------------------------------------------------
@@ -68,6 +73,198 @@ function StatCard({ label, value, accent }) {
       <span className="p360-stat-value">{value ?? '—'}</span>
       <span className="p360-stat-label">{label}</span>
     </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// PortalInvitePanel — Milestone 1 / Part A
+//
+// Allows the doctor to issue a one-time patient portal invite.
+// States: idle | loading | success | already-exists | error
+//
+// On success the backend returns a 64-char hex inviteToken.
+// The registration link is: <origin>/portal/register?token=<inviteToken>
+// The token is NOT exposed in the URL path — it is a query parameter on
+// the registration page, which is public (the patient must know the token
+// to complete registration).  The patient's _id never appears in the link.
+// ---------------------------------------------------------------------------
+function PortalInvitePanel({ patientId, patientName }) {
+  // 'idle' | 'loading' | 'success' | 'already-exists' | 'error'
+  const [panelState, setPanelState] = useState('idle');
+  const [inviteLink, setInviteLink] = useState('');
+  const [expiresAt,  setExpiresAt]  = useState(null);
+  const [errorMsg,   setErrorMsg]   = useState('');
+  const [copied,     setCopied]     = useState(false);
+
+  async function handleIssueInvite() {
+    if (panelState === 'loading') return;
+    setPanelState('loading');
+    setErrorMsg('');
+    setCopied(false);
+
+    try {
+      const data = await apiIssueInvite(patientId);
+
+      if (data.success) {
+        // Build the registration link: origin + /portal/register?token=RAW_TOKEN
+        // The raw token is returned once and never stored in plaintext on the server.
+        const origin = typeof window !== 'undefined'
+          ? window.location.origin
+          : '';
+        setInviteLink(`${origin}/portal/register?token=${data.inviteToken}`);
+        setExpiresAt(data.expiresAt ?? null);
+        setPanelState('success');
+        return;
+      }
+
+      // HTTP 409: account already exists for this patient
+      if (data.message && /already exists/i.test(data.message)) {
+        setPanelState('already-exists');
+        return;
+      }
+
+      // Any other failure (404 patient not found, 500, etc.)
+      setErrorMsg(data.message || 'Could not create invite. Please try again.');
+      setPanelState('error');
+    } catch {
+      setErrorMsg('Network error — could not create invite. Please try again.');
+      setPanelState('error');
+    }
+  }
+
+  async function handleCopy() {
+    if (!inviteLink) return;
+    try {
+      await navigator.clipboard.writeText(inviteLink);
+      setCopied(true);
+      // Reset "Copied!" label after 3 seconds
+      setTimeout(() => setCopied(false), 3000);
+    } catch {
+      // Clipboard API unavailable (non-HTTPS or permissions denied) — select the input text
+      const input = document.getElementById('invite-link-input');
+      input?.select();
+    }
+  }
+
+  function handleReset() {
+    setPanelState('idle');
+    setInviteLink('');
+    setExpiresAt(null);
+    setErrorMsg('');
+    setCopied(false);
+  }
+
+  return (
+    <section className="p360-card p360-invite-section" aria-label="Patient portal access">
+      <div className="p360-invite-header">
+        <h2 className="p360-section-title">Patient portal access</h2>
+        <p className="p360-invite-sub">
+          Give {patientName} access to their approved consultation records.
+        </p>
+      </div>
+
+      {/* ── Idle state ── */}
+      {panelState === 'idle' && (
+        <button
+          type="button"
+          className="p360-invite-btn"
+          onClick={handleIssueInvite}
+        >
+          Generate portal invite
+        </button>
+      )}
+
+      {/* ── Loading state ── */}
+      {panelState === 'loading' && (
+        <p className="p360-invite-loading" aria-live="polite">
+          <span className="p360-invite-spinner" aria-hidden="true" />
+          Generating invite…
+        </p>
+      )}
+
+      {/* ── Success state ── */}
+      {panelState === 'success' && (
+        <div className="p360-invite-success">
+          <p className="p360-invite-success-msg" role="status">
+            ✅ Invite created.
+            {expiresAt && (
+              <> Share this link with {patientName} — it expires on{' '}
+                <strong>{fmtDate(expiresAt)}</strong>.
+              </>
+            )}
+          </p>
+
+          <div className="p360-invite-link-row">
+            <input
+              id="invite-link-input"
+              type="text"
+              className="p360-invite-link-input"
+              value={inviteLink}
+              readOnly
+              aria-label="Patient portal registration link"
+              onFocus={(e) => e.target.select()}
+            />
+            <button
+              type="button"
+              className={`p360-invite-copy-btn${copied ? ' p360-invite-copy-btn--copied' : ''}`}
+              onClick={handleCopy}
+              aria-label={copied ? 'Link copied' : 'Copy invite link'}
+            >
+              {copied ? '✓ Copied!' : 'Copy link'}
+            </button>
+          </div>
+
+          <div className="p360-invite-notice">
+            <p className="p360-invite-notice-text">
+              🔒 This link is shown once. If the patient loses it, generate a new invite.
+              The link expires in 72 hours and can only be used once.
+            </p>
+          </div>
+
+          <button
+            type="button"
+            className="p360-invite-new-btn"
+            onClick={handleReset}
+          >
+            Generate a new invite
+          </button>
+        </div>
+      )}
+
+      {/* ── Already-exists state ── */}
+      {panelState === 'already-exists' && (
+        <div className="p360-invite-exists" role="status">
+          <p className="p360-invite-exists-msg">
+            ✓ {patientName} already has a patient portal account.
+            They can sign in at{' '}
+            <strong>
+              {typeof window !== 'undefined' ? window.location.origin : ''}/portal/login
+            </strong>.
+          </p>
+          <button
+            type="button"
+            className="p360-invite-new-btn"
+            onClick={handleReset}
+          >
+            Issue a replacement invite
+          </button>
+        </div>
+      )}
+
+      {/* ── Error state ── */}
+      {panelState === 'error' && (
+        <div className="p360-invite-error-block">
+          <p className="p360-invite-error-msg" role="alert">{errorMsg}</p>
+          <button
+            type="button"
+            className="p360-invite-btn"
+            onClick={handleReset}
+          >
+            Try again
+          </button>
+        </div>
+      )}
+    </section>
   );
 }
 
@@ -325,6 +522,7 @@ export default function PatientProfilePage() {
   }
 
   const { patient, statistics, latestApprovedConsultation, recentConsultations } = overview;
+  const patientFullName = `${patient.firstName} ${patient.lastName}`;
 
   // ── Edit mode ─────────────────────────────────────────────────────────────
   if (editing) {
@@ -444,7 +642,7 @@ export default function PatientProfilePage() {
       {/* Patient header */}
       <div className="p360-header-card">
         <div className="p360-name-row">
-          <h1 className="p360-name">{patient.firstName} {patient.lastName}</h1>
+          <h1 className="p360-name">{patientFullName}</h1>
           {patient.medicalRecordId && (
             <span className="p360-mrid">MR: {patient.medicalRecordId}</span>
           )}
@@ -498,6 +696,9 @@ export default function PatientProfilePage() {
           accent="date"
         />
       </section>
+
+      {/* Milestone 1 — Patient portal access */}
+      <PortalInvitePanel patientId={id} patientName={patientFullName} />
 
       {/* Latest approved visit */}
       <LatestVisitSection consultation={latestApprovedConsultation} />

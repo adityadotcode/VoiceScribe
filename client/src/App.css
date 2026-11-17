@@ -5213,3 +5213,297 @@
   .portal-main { padding: 16px 16px 40px; }
   .portal-patient-card, .portal-history, .portal-detail-card { padding: 14px 16px; }
 }
+
+/* ============================================================
+   Milestone 1 — Patient Portal Access Loop additions
+   New classes only — no existing rules modified.
+   ============================================================ */
+
+/* ── Portal layout: brand sub-label ───────────────────────────────────── */
+.portal-brand-sub {
+  font-size: 11px;
+  color: var(--text-sub);
+  margin-left: 4px;
+}
+
+/* ── Portal layout: nav ───────────────────────────────────────────────── */
+.portal-nav {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 1;
+  margin-left: 16px;
+}
+.portal-nav-link {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text);
+  text-decoration: none;
+  padding: 4px 10px;
+  border-radius: var(--radius-md);
+  transition: background 0.1s;
+}
+.portal-nav-link:hover,
+.portal-nav-link:focus-visible {
+  background: var(--surface-hover);
+  color: var(--text-h);
+}
+
+/* ── Portal back link (content-area, not header) ──────────────────────── */
+.portal-back-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 13px;
+  color: var(--brand);
+  text-decoration: none;
+  margin-bottom: 16px;
+}
+.portal-back-link:hover { text-decoration: underline; }
+
+/* ── PortalInvitePanel (p360-invite-*) ────────────────────────────────── */
+.p360-invite-section {
+  /* sits in the same card grid as other p360-card sections */
+}
+.p360-invite-header {
+  margin-bottom: 16px;
+}
+.p360-invite-sub {
+  font-size: 13px;
+  color: var(--text-sub);
+  margin: 4px 0 0;
+}
+
+/* Idle / action button */
+.p360-invite-btn {
+  appearance: none;
+  background: var(--brand);
+  color: #fff;
+  border: none;
+  border-radius: var(--radius-md);
+  padding: 10px 20px;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.p360-invite-btn:hover:not(:disabled) { background: var(--brand-hover); }
+.p360-invite-btn:disabled { opacity: 0.55; cursor: not-allowed; }
+
+/* Loading */
+.p360-invite-loading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text-sub);
+}
+.p360-invite-spinner {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--border);
+  border-top-color: var(--brand);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+
+/* Success */
+.p360-invite-success {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.p360-invite-success-msg {
+  font-size: 13px;
+  color: var(--text);
+  margin: 0;
+}
+.p360-invite-link-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.p360-invite-link-input {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  font-family: ui-monospace, 'Cascadia Code', monospace;
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface-2);
+  color: var(--text);
+  cursor: text;
+}
+.p360-invite-link-input:focus { outline: none; border-color: var(--brand); }
+.p360-invite-copy-btn {
+  appearance: none;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 7px 14px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--text);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.1s, border-color 0.1s, color 0.1s;
+}
+.p360-invite-copy-btn:hover { background: var(--surface-hover); border-color: var(--border-mid); }
+.p360-invite-copy-btn--copied {
+  background: var(--green-bg);
+  border-color: var(--green-border);
+  color: var(--green);
+}
+
+/* One-time notice */
+.p360-invite-notice {
+  background: var(--amber-bg, #fffbeb);
+  border: 1px solid var(--amber-border, #fde68a);
+  border-radius: var(--radius-md);
+  padding: 10px 14px;
+}
+.p360-invite-notice-text {
+  font-size: 12px;
+  color: var(--amber-text, #92400e);
+  margin: 0;
+  line-height: 1.5;
+}
+
+/* Generate new / secondary action */
+.p360-invite-new-btn {
+  appearance: none;
+  background: transparent;
+  border: none;
+  color: var(--brand);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  padding: 0;
+  text-decoration: underline;
+  align-self: flex-start;
+}
+.p360-invite-new-btn:hover { color: var(--brand-hover); }
+
+/* Already-exists */
+.p360-invite-exists {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.p360-invite-exists-msg {
+  font-size: 13px;
+  color: var(--text);
+  margin: 0;
+}
+
+/* Error */
+.p360-invite-error-block {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.p360-invite-error-msg {
+  font-size: 13px;
+  color: var(--red, #c0392b);
+  margin: 0;
+  padding: 10px 14px;
+  background: var(--red-bg, #fff0f0);
+  border: 1px solid var(--red-border, #f5c2c2);
+  border-radius: var(--radius-md);
+}
+
+/* ── Auth page additions ───────────────────────────────────────────────── */
+
+/* auth-sub-hint — supplementary text below auth-title on register page */
+.auth-sub-hint {
+  font-size: 13px;
+  color: var(--text-sub);
+  margin: -8px 0 16px;
+}
+
+/* auth-submit alias for existing auth-submit-btn */
+.auth-submit {
+  display: block;
+  width: 100%;
+  padding: 11px 0;
+  background: var(--brand);
+  color: #fff;
+  border: none;
+  border-radius: var(--radius-md);
+  font: inherit;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s;
+  margin-top: 4px;
+}
+.auth-submit:hover:not(:disabled) { background: var(--brand-hover); }
+.auth-submit:disabled { opacity: 0.55; cursor: not-allowed; }
+
+/* auth-hint — inline helper text under form fields */
+.auth-hint {
+  font-size: 11px;
+  color: var(--text-sub);
+  margin: 3px 0 0;
+}
+
+/* auth-footer — link row below forms */
+.auth-footer {
+  font-size: 13px;
+  color: var(--text-sub);
+  text-align: center;
+  margin-top: 20px;
+}
+
+/* Password row: input + show/hide toggle side-by-side */
+.auth-password-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.auth-input--password {
+  padding-right: 44px; /* room for toggle button */
+  flex: 1;
+}
+.auth-toggle-pw {
+  position: absolute;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  width: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  appearance: none;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font-size: 15px;
+  color: var(--text-sub);
+}
+.auth-toggle-pw:hover { color: var(--text); }
+
+/* Session notice (non-error info banner) */
+.auth-notice {
+  background: var(--brand-light);
+  border: 1px solid var(--brand-ring, #bfdbfe);
+  color: var(--brand-dark);
+  border-radius: var(--radius-md);
+  padding: 10px 14px;
+  font-size: 13px;
+  margin-bottom: 8px;
+}
+
+/* @keyframes spin already defined elsewhere; guard against duplicate */
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ── Responsive adjustments for portal layout on small screens ─────────── */
+@media (max-width: 600px) {
+  .portal-nav { display: none; }   /* Nav collapses; "My records" accessible via back link */
+  .p360-invite-link-row { flex-direction: column; align-items: stretch; }
+  .p360-invite-copy-btn { width: 100%; text-align: center; }
+}

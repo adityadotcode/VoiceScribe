@@ -18,6 +18,26 @@ function authHeaders(token) {
   };
 }
 
+// ── Doctor-side portal management (uses apiFetch — doctor auth) ──────────
+
+import { apiFetch } from '../../api.js';
+
+/**
+ * Issue a portal invite for a patient.
+ * Requires doctor authentication (Bearer token via apiFetch).
+ * POST /api/patient-portal/auth/invite
+ * Returns { success, inviteToken, expiresAt } on 201.
+ * Returns { success: false, message } on 409 (already exists) or 404.
+ */
+export async function apiIssueInvite(patientId) {
+  const res = await apiFetch('/api/patient-portal/auth/invite', {
+    method:  'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body:    JSON.stringify({ patientId }),
+  });
+  return res.json();
+}
+
 // ── Auth ─────────────────────────────────────────────────────────────────
 
 export async function apiPatientRegister({ inviteToken, email, password, displayName }) {

@@ -1,15 +1,29 @@
+/**
+ * PatientLoginPage — Patient portal sign-in
+ *
+ * Milestone 1 improvements:
+ *   - Password visibility toggle.
+ *   - Session-expired notice when arriving with ?expired=1 (set by
+ *     PatientPortalLayout on 401 responses — future hardening hook).
+ *   - Clears error on field change.
+ */
+
 import { useState } from 'react';
-import { Link, Navigate, useNavigate } from 'react-router-dom';
+import { Link, Navigate, useNavigate, useSearchParams } from 'react-router-dom';
 import { usePatientAuth } from '../../contexts/PatientPortalAuthContext.jsx';
 
 export default function PatientLoginPage() {
   const { login, isAuthenticated, isLoading } = usePatientAuth();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
 
-  const [email,      setEmail]      = useState('');
-  const [password,   setPassword]   = useState('');
-  const [error,      setError]      = useState('');
-  const [submitting, setSubmitting] = useState(false);
+  const sessionExpired = searchParams.get('expired') === '1';
+
+  const [email,        setEmail]        = useState('');
+  const [password,     setPassword]     = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [error,        setError]        = useState('');
+  const [submitting,   setSubmitting]   = useState(false);
 
   if (!isLoading && isAuthenticated) {
     return <Navigate to="/portal/history" replace />;
@@ -40,6 +54,13 @@ export default function PatientLoginPage() {
 
         <h1 className="auth-title">Sign in to your records</h1>
 
+        {/* Session-expired notice */}
+        {sessionExpired && !error && (
+          <p className="auth-notice" role="status">
+            Your session has expired. Please sign in again.
+          </p>
+        )}
+
         {error && (
           <p className="auth-error" role="alert">{error}</p>
         )}
@@ -54,23 +75,36 @@ export default function PatientLoginPage() {
               autoComplete="email"
               required
               value={email}
-              onChange={(e) => setEmail(e.target.value)}
+              onChange={(e) => { setEmail(e.target.value); setError(''); }}
               disabled={submitting}
             />
           </div>
+
           <div className="auth-field">
             <label htmlFor="pp-password" className="auth-label">Password</label>
-            <input
-              id="pp-password"
-              type="password"
-              className="auth-input"
-              autoComplete="current-password"
-              required
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              disabled={submitting}
-            />
+            <div className="auth-password-row">
+              <input
+                id="pp-password"
+                type={showPassword ? 'text' : 'password'}
+                className="auth-input auth-input--password"
+                autoComplete="current-password"
+                required
+                value={password}
+                onChange={(e) => { setPassword(e.target.value); setError(''); }}
+                disabled={submitting}
+              />
+              <button
+                type="button"
+                className="auth-toggle-pw"
+                onClick={() => setShowPassword((v) => !v)}
+                aria-label={showPassword ? 'Hide password' : 'Show password'}
+                tabIndex={-1}
+              >
+                {showPassword ? '🙈' : '👁'}
+              </button>
+            </div>
           </div>
+
           <button
             type="submit"
             className="auth-submit"

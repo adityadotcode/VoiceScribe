@@ -7,7 +7,7 @@ import { AuthProvider, useAuth } from './contexts/AuthContext.jsx'
 import { PatientPortalAuthProvider } from './contexts/PatientPortalAuthContext.jsx'
 import { useTheme } from './contexts/ThemeContext.jsx'
 import PrivateRoute from './components/layout/PrivateRoute.jsx'
-import PatientPortalRoute from './components/layout/PatientPortalRoute.jsx'
+import PatientPortalLayout from './components/layout/PatientPortalLayout.jsx'
 import LoginPage from './pages/LoginPage.jsx'
 import RegisterPage from './pages/RegisterPage.jsx'
 import PatientListPage from './pages/PatientListPage.jsx'
@@ -555,14 +555,17 @@ export default function App() {
             element={
               <PatientPortalAuthProvider>
                 <Routes>
-                  {/* Public portal routes */}
+                  {/* Public portal routes — standalone auth-shell layout */}
                   <Route path="login"    element={<PatientLoginPage />} />
                   <Route path="register" element={<PatientRegisterPage />} />
-                  {/* Protected portal routes */}
-                  <Route element={<PatientPortalRoute />}>
-                    <Route path="history"                  element={<PatientHistoryPage />} />
-                    <Route path="consultation/:id"         element={<PatientConsultationPage />} />
+
+                  {/* Protected portal routes — PatientPortalLayout provides
+                      the auth guard, shared header, nav, and logout button  */}
+                  <Route element={<PatientPortalLayout />}>
+                    <Route path="history"              element={<PatientHistoryPage />} />
+                    <Route path="consultation/:id"     element={<PatientConsultationPage />} />
                   </Route>
+
                   {/* Default inside portal */}
                   <Route path="*" element={<Navigate to="/portal/login" replace />} />
                 </Routes>
