@@ -71,7 +71,7 @@ export default function PatientRegisterPage() {
       // Map server error messages to user-friendly text
       const msg = result?.message ?? '';
       if (/invalid or expired/i.test(msg)) {
-        setErrors({ inviteToken: 'This invite token is invalid or has expired. Ask your doctor for a new one.' });
+        setErrors({ inviteToken: 'Invalid or expired invite token. Ask your doctor for a new one.' });
       } else if (/already exists/i.test(msg)) {
         setErrors({ email: 'An account with this email already exists. Try signing in instead.' });
       } else {

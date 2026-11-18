@@ -45,7 +45,7 @@ import PatientLoginPage from '../pages/portal/PatientLoginPage.jsx';
 import PatientRegisterPage from '../pages/portal/PatientRegisterPage.jsx';
 import PatientHistoryPage from '../pages/portal/PatientHistoryPage.jsx';
 import PatientConsultationPage from '../pages/portal/PatientConsultationPage.jsx';
-import PatientPortalRoute from '../components/layout/PatientPortalRoute.jsx';
+import PatientPortalLayout from '../components/layout/PatientPortalLayout.jsx';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -96,7 +96,7 @@ function wrapPortal(ui, initialPath = '/portal/login') {
         <Routes>
           <Route path="/portal/login"           element={<PatientLoginPage />} />
           <Route path="/portal/register"        element={<PatientRegisterPage />} />
-          <Route element={<PatientPortalRoute />}>
+          <Route element={<PatientPortalLayout />}>
             <Route path="/portal/history"       element={<PatientHistoryPage />} />
             <Route path="/portal/consultation/:id" element={<PatientConsultationPage />} />
           </Route>
@@ -108,7 +108,9 @@ function wrapPortal(ui, initialPath = '/portal/login') {
 }
 
 beforeEach(() => {
-  vi.clearAllMocks();
+  // resetAllMocks clears queued implementations (mockReturnValue, mockResolvedValueOnce)
+  // in addition to call history — prevents persistent mocks from leaking between tests.
+  vi.resetAllMocks();
   // Default: refresh fails → unauthenticated on mount
   apiPatientRefresh.mockResolvedValue(null);
 });
@@ -137,7 +139,7 @@ describe('A. PatientPortalAuthContext', () => {
   test('A2. silent refresh failure → unauthenticated', async () => {
     apiPatientRefresh.mockResolvedValueOnce(null);
     wrapPortal(<div />, '/portal/history');
-    // PatientPortalRoute should redirect to login
+    // PatientPortalLayout should redirect to login
     await waitFor(() =>
       expect(screen.queryByRole('heading', { name: /sign in to your records/i })).toBeInTheDocument()
     );
@@ -155,7 +157,7 @@ describe('B. PatientLoginPage', () => {
       expect(screen.getByRole('heading', { name: /sign in to your records/i })).toBeInTheDocument()
     );
     expect(screen.getByLabelText(/email/i)).toBeInTheDocument();
-    expect(screen.getByLabelText(/password/i)).toBeInTheDocument();
+    expect(screen.getByLabelText("Password")).toBeInTheDocument();
   });
 
   test('B2. submit button disabled when fields are empty', async () => {
@@ -169,7 +171,7 @@ describe('B. PatientLoginPage', () => {
     await waitFor(() => screen.getByRole('heading', { name: /sign in/i }));
 
     await userEvent.type(screen.getByLabelText(/email/i), 'p@test.com');
-    await userEvent.type(screen.getByLabelText(/password/i), 'wrongpass');
+    await userEvent.type(screen.getByLabelText("Password"), 'wrongpass');
     await userEvent.click(screen.getByRole('button', { name: /sign in/i }));
 
     await waitFor(() =>
@@ -186,7 +188,7 @@ describe('B. PatientLoginPage', () => {
     await waitFor(() => screen.getByRole('heading', { name: /sign in/i }));
 
     await userEvent.type(screen.getByLabelText(/email/i), 'patient@example.com');
-    await userEvent.type(screen.getByLabelText(/password/i), 'pass1234');
+    await userEvent.type(screen.getByLabelText("Password"), 'pass1234');
     await userEvent.click(screen.getByRole('button', { name: /sign in/i }));
 
     await waitFor(() =>
@@ -219,7 +221,7 @@ describe('C. PatientRegisterPage', () => {
     await userEvent.type(screen.getByLabelText(/invite token/i), 'badtoken');
     await userEvent.type(screen.getByLabelText(/your name/i), 'Alice');
     await userEvent.type(screen.getByLabelText(/email/i), 'alice@test.com');
-    await userEvent.type(screen.getByLabelText(/password/i), 'pass1234');
+    await userEvent.type(screen.getByLabelText("Password"), 'pass1234');
     await userEvent.click(screen.getByRole('button', { name: /create account/i }));
 
     await waitFor(() =>
@@ -238,7 +240,7 @@ describe('C. PatientRegisterPage', () => {
     await userEvent.type(screen.getByLabelText(/invite token/i), 'VALIDTOKEN');
     await userEvent.type(screen.getByLabelText(/your name/i), 'Alice Smith');
     await userEvent.type(screen.getByLabelText(/email/i), 'alice@test.com');
-    await userEvent.type(screen.getByLabelText(/password/i), 'pass1234');
+    await userEvent.type(screen.getByLabelText("Password"), 'pass1234');
     await userEvent.click(screen.getByRole('button', { name: /create account/i }));
 
     await waitFor(() =>
@@ -387,7 +389,7 @@ describe('E. PatientConsultationPage', () => {
     expect(screen.queryByText('SHOULD NOT APPEAR')).not.toBeInTheDocument();
   });
 
-  test('E6. back button navigates to history', async () => {
+  test('E6. back link navigates to history', async () => {
     apiGetOwnPatient.mockResolvedValue({ success: true, patient: PATIENT });
     apiListPatientConsultations.mockResolvedValue({ success: true, consultations: [] });
     apiGetPatientConsultation.mockResolvedValueOnce({
@@ -395,7 +397,7 @@ describe('E. PatientConsultationPage', () => {
     });
     wrapPortal(null, '/portal/consultation/dddd');
     await waitFor(() => screen.getByText('Cough'));
-    await userEvent.click(screen.getByRole('button', { name: /back to history/i }));
+    await userEvent.click(screen.getByRole('link', { name: /back to history/i }));
     await waitFor(() =>
       expect(screen.getByText(/your approved consultations/i)).toBeInTheDocument()
     );
@@ -403,10 +405,10 @@ describe('E. PatientConsultationPage', () => {
 });
 
 // ===========================================================================
-// F — PatientPortalRoute
+// F — PatientPortalLayout (auth guard)
 // ===========================================================================
 
-describe('F. PatientPortalRoute', () => {
+describe('F. PatientPortalLayout — auth guard', () => {
   test('F1. unauthenticated access to /portal/history redirects to login', async () => {
     apiPatientRefresh.mockResolvedValueOnce(null); // no session
     wrapPortal(null, '/portal/history');
