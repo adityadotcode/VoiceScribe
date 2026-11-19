@@ -627,9 +627,18 @@ export default function PatientProfilePage() {
         <button type="button" className="pt-back-btn" onClick={() => navigate('/patients')}>
           ← Patients
         </button>
-        <button type="button" className="pt-edit-btn" onClick={startEditing}>
-          Edit patient
-        </button>
+        <div className="pt-page-header-actions">
+          <button
+            type="button"
+            className="pt-new-consult-btn"
+            onClick={() => navigate(`/consultation/new?patientId=${id}`)}
+          >
+            New consultation
+          </button>
+          <button type="button" className="pt-edit-btn" onClick={startEditing}>
+            Edit patient
+          </button>
+        </div>
       </div>
 
       {/* Archived banner */}

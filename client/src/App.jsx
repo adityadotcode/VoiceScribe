@@ -408,9 +408,9 @@ function DashboardApp() {
                   <button
                     type="button"
                     className="pipeline-back-btn"
-                    onClick={() => { handleBack(); setStage(STAGE.RECORDING) }}
+                    onClick={handleBack}
                   >
-                    ← Back to recording
+                    ← Back to dashboard
                   </button>
                 </div>
               </div>
@@ -499,11 +499,13 @@ function DashboardApp() {
             />
           ) : (
             <div className="workspace-start-card">
-              <button type="button" className="ws-start-btn" onClick={() => setStage(STAGE.RECORDING)}>
+              <button type="button" className="ws-start-btn" onClick={() => navigate('/consultation/new')}>
                 <span className="ws-start-icon" aria-hidden="true">🎙</span>
-                Start recording
+                Start new consultation
               </button>
-              <p className="ws-start-hint">Microphone access will be requested when you start.</p>
+              <p className="ws-start-hint">
+                Select a patient and confirm recording consent before recording begins.
+              </p>
             </div>
           )}
 

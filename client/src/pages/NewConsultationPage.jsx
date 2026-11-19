@@ -18,10 +18,11 @@
  */
 
 import { useEffect, useRef, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { apiCreateRecordingConsent } from '../services/api/recordingConsents.js';
 import {
   apiListPatients,
+  apiGetPatient,
   apiGetPatientOverview,
 } from '../services/api/patients.js';
 import ChangeSummaryPanel from '../components/consultation/ChangeSummaryPanel.jsx';
@@ -367,6 +368,7 @@ function SelectedPatientPanel({ patient, onClear }) {
 // ---------------------------------------------------------------------------
 export default function NewConsultationPage() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [selectedPatient, setSelectedPatient] = useState(null);
 
   // Phase 7 / P0-1 — explicit patient-consent confirmation.
@@ -377,6 +379,43 @@ export default function NewConsultationPage() {
   // 'idle' | 'submitting' | 'error'
   const [consentState,    setConsentState]    = useState('idle');
   const [consentError,    setConsentError]    = useState('');
+
+  // Milestone 2 — preselection error state.
+  // Shown when ?patientId= is present in the URL but the patient could not
+  // be loaded (invalid ID, not found, or belongs to another doctor).
+  const [preselectError, setPreselectError] = useState('');
+
+  // ── Milestone 2 — Patient preselection from ?patientId= query param ──────
+  // When the doctor clicks "New consultation" from a patient profile, the
+  // URL includes ?patientId=<id>.  We fetch the patient via the authenticated
+  // API (GET /api/patients/:id) which enforces doctor ownership server-side.
+  // If the fetch fails (404), we show an error but keep the search panel
+  // available so the doctor can still search manually.
+  useEffect(() => {
+    const patientId = searchParams.get('patientId');
+    if (!patientId) return; // no preselection — normal search flow
+
+    let cancelled = false;
+    apiGetPatient(patientId)
+      .then((data) => {
+        if (cancelled) return;
+        if (data.success && data.patient) {
+          handleSelect(data.patient);
+        } else {
+          setPreselectError(
+            data.message || 'Could not load the selected patient. Please search manually.'
+          );
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setPreselectError('Network error — could not load the selected patient. Please search manually.');
+        }
+      });
+
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   function handleSelect(patient) {
     setSelectedPatient(patient);
@@ -457,7 +496,14 @@ export default function NewConsultationPage() {
             </h2>
 
             {!selectedPatient ? (
-              <PatientSearchPanel onSelect={handleSelect} />
+              <>
+                {preselectError && (
+                  <p className="nc-search-error" role="alert" style={{ marginBottom: '12px' }}>
+                    {preselectError}
+                  </p>
+                )}
+                <PatientSearchPanel onSelect={handleSelect} />
+              </>
             ) : (
               <SelectedPatientPanel
                 patient={selectedPatient}
