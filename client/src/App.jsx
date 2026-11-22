@@ -15,6 +15,7 @@ import NewPatientPage from './pages/NewPatientPage.jsx'
 import PatientProfilePage from './pages/PatientProfilePage.jsx'
 import NewConsultationPage from './pages/NewConsultationPage.jsx'
 import ConsultationDetailPage from './pages/ConsultationDetailPage.jsx'
+import ManualConsultationPage from './pages/ManualConsultationPage.jsx'
 import PatientLoginPage from './pages/portal/PatientLoginPage.jsx'
 import PatientRegisterPage from './pages/portal/PatientRegisterPage.jsx'
 import PatientHistoryPage from './pages/portal/PatientHistoryPage.jsx'
@@ -545,6 +546,7 @@ export default function App() {
           <Route element={<PrivateRoute />}>
             <Route path="/dashboard"           element={<DashboardApp />} />
             <Route path="/consultation/new"    element={<NewConsultationPage />} />
+            <Route path="/consultation/manual" element={<ManualConsultationPage />} />
             <Route path="/consultation/:id"    element={<ConsultationDetailPage />} />
             <Route path="/patients"            element={<PatientListPage />} />
             <Route path="/patients/new"        element={<NewPatientPage />} />

@@ -6,6 +6,25 @@
 import { apiFetch } from '../../api.js';
 
 /**
+ * Create a new consultation (manual entry — no audio recording).
+ *
+ * POST /api/consultations
+ *
+ * @param {object} body  Must include patientId. No transcript, no consentEventId.
+ *                       { patientId, note, encounterType, consultationDate, status }
+ *
+ * Returns { success: true, consultation } HTTP 201 or { success: false, message }.
+ */
+export async function apiCreateConsultation(body) {
+  const res = await apiFetch('/api/consultations', {
+    method:  'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body:    JSON.stringify(body),
+  });
+  return res.json();
+}
+
+/**
  * Fetch a single consultation by ID.
  * Returns { success: true, consultation } or { success: false, message }.
  * 404 is returned as { success: false } — the backend never reveals

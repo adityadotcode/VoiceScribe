@@ -5543,3 +5543,256 @@
   .pt-new-consult-btn,
   .pt-edit-btn { width: 100%; text-align: center; }
 }
+
+/* ============================================================
+   Milestone 3 — Manual Consultation workflow
+   Prefix: mc- for ManualConsultationPage,
+           nc-manual-* for NewConsultationPage additions.
+   ============================================================ */
+
+/* ── NewConsultationPage manual-entry option ───────────────────────────── */
+.nc-manual-option {
+  margin-top: 20px;
+  padding: 14px 16px;
+  background: var(--surface-2);
+  border: 1px dashed var(--border-mid);
+  border-radius: var(--radius-md);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.nc-manual-label {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--text-sub);
+  margin: 0;
+  letter-spacing: 0.04em;
+}
+.nc-manual-btn {
+  appearance: none;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 9px 16px;
+  font: inherit;
+  font-size: 14px;
+  color: var(--text-h);
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.12s, border-color 0.12s;
+}
+.nc-manual-btn:hover:not(:disabled) {
+  background: var(--surface-hover);
+  border-color: var(--border-mid);
+}
+.nc-manual-btn:disabled { opacity: 0.55; cursor: not-allowed; }
+.nc-manual-hint {
+  font-size: 11px;
+  color: var(--text-sub);
+  margin: 0;
+}
+
+/* ── ManualConsultationPage layout ─────────────────────────────────────── */
+.mc-page {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 24px 20px 56px;
+  width: 100%;
+}
+.mc-page-header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+.mc-page-title {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--text-h);
+  margin: 0;
+}
+
+/* Loading / error */
+.mc-loading {
+  font-size: 14px;
+  color: var(--text-sub);
+  text-align: center;
+  padding: 40px 0;
+}
+.mc-error {
+  background: var(--red-bg, #fff0f0);
+  border: 1px solid var(--red-border, #f5c2c2);
+  color: var(--red, #c0392b);
+  border-radius: var(--radius-md);
+  padding: 12px 16px;
+  font-size: 14px;
+}
+
+/* Patient banner */
+.mc-patient-banner {
+  background: var(--brand-light);
+  border: 1px solid var(--brand-ring, #bfdbfe);
+  border-radius: var(--radius-md);
+  padding: 10px 14px;
+  margin-bottom: 16px;
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.mc-patient-name {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--brand-dark);
+}
+.mc-patient-meta {
+  font-size: 13px;
+  color: var(--text-sub);
+}
+
+/* Manual entry notice */
+.mc-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 10px 14px;
+  font-size: 13px;
+  color: var(--text);
+  margin-bottom: 20px;
+}
+
+/* Form */
+.mc-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+.mc-section {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 18px 20px;
+  margin-bottom: 16px;
+}
+.mc-section-title {
+  font-size: 13px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-sub);
+  margin: 0 0 14px;
+}
+.mc-section-optional {
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 11px;
+}
+.mc-section-hint {
+  font-size: 12px;
+  color: var(--text-sub);
+  margin: -8px 0 12px;
+}
+.mc-row {
+  display: grid;
+  grid-template-columns: 2fr 1fr 1fr;
+  gap: 12px;
+}
+@media (max-width: 600px) {
+  .mc-row { grid-template-columns: 1fr; }
+}
+
+/* Field components */
+.mc-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 14px;
+}
+.mc-field:last-child { margin-bottom: 0; }
+.mc-label {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-sub);
+}
+.mc-required { color: var(--red, #c0392b); }
+.mc-field-hint {
+  font-size: 11px;
+  color: var(--text-sub);
+  margin: 0;
+}
+.mc-input,
+.mc-textarea,
+.mc-select {
+  font: inherit;
+  font-size: 14px;
+  color: var(--text-h);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 7px 10px;
+  transition: border-color 0.1s;
+}
+.mc-input:focus,
+.mc-textarea:focus,
+.mc-select:focus {
+  outline: none;
+  border-color: var(--brand);
+  box-shadow: 0 0 0 2px var(--brand-ring, #bfdbfe);
+}
+.mc-input:disabled,
+.mc-textarea:disabled,
+.mc-select:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+.mc-textarea { resize: vertical; }
+.mc-select { cursor: pointer; }
+
+/* Validation */
+.mc-field-error {
+  font-size: 12px;
+  color: var(--red, #c0392b);
+  margin: -8px 0 10px;
+}
+.mc-save-error {
+  background: var(--red-bg, #fff0f0);
+  border: 1px solid var(--red-border, #f5c2c2);
+  color: var(--red, #c0392b);
+  border-radius: var(--radius-md);
+  padding: 10px 14px;
+  font-size: 13px;
+  margin-bottom: 14px;
+}
+
+/* Actions footer */
+.mc-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 4px;
+}
+.mc-save-btn {
+  appearance: none;
+  background: var(--brand);
+  color: #fff;
+  border: none;
+  border-radius: var(--radius-md);
+  padding: 10px 24px;
+  font: inherit;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.mc-save-btn:hover:not(:disabled) { background: var(--brand-hover); }
+.mc-save-btn:disabled { opacity: 0.55; cursor: not-allowed; }
+.mc-actions-hint {
+  font-size: 12px;
+  color: var(--text-sub);
+  margin: 8px 0 0;
+}

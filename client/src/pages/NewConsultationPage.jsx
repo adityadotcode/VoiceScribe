@@ -540,6 +540,28 @@ export default function NewConsultationPage() {
               )}
             </section>
           )}
+
+          {/* ── Milestone 3 — Manual entry option ── */}
+          {selectedPatient && (
+            <div className="nc-manual-option">
+              <p className="nc-manual-label">
+                No recording needed?
+              </p>
+              <button
+                type="button"
+                className="nc-manual-btn"
+                onClick={() =>
+                  navigate(`/consultation/manual?patientId=${selectedPatient._id}`)
+                }
+                disabled={isSubmitting}
+              >
+                ✏️ Enter consultation manually
+              </button>
+              <p className="nc-manual-hint">
+                Type the note directly — no microphone, no AI extraction.
+              </p>
+            </div>
+          )}
         </div>
 
         {/* ── Right column: rich pre-consultation context ── */}
