@@ -20,6 +20,7 @@ import { describe, test, expect, beforeEach, vi } from 'vitest';
 // ---------------------------------------------------------------------------
 
 vi.mock('../services/api/patientPortal.js', () => ({
+  apiIssueInvite:              vi.fn(),
   apiPatientLogin:            vi.fn(),
   apiPatientRegister:         vi.fn(),
   apiPatientRefresh:          vi.fn(),
@@ -28,6 +29,24 @@ vi.mock('../services/api/patientPortal.js', () => ({
   apiGetOwnPatient:           vi.fn(),
   apiListPatientConsultations: vi.fn(),
   apiGetPatientConsultation:  vi.fn(),
+}));
+
+// Milestone 4: PatientConsultationPage now imports generateConsultationPdf
+vi.mock('../services/pdfExport.js', () => ({
+  generateConsultationPdf: vi.fn().mockResolvedValue('consultation.pdf'),
+}));
+
+vi.mock('jspdf', () => ({
+  jsPDF: vi.fn(function () {
+    return {
+      setFontSize: vi.fn(), setFont: vi.fn(), setTextColor: vi.fn(),
+      setDrawColor: vi.fn(), setLineWidth: vi.fn(), line: vi.fn(),
+      text: vi.fn(), addPage: vi.fn(), setPage: vi.fn(),
+      getNumberOfPages: vi.fn(() => 1),
+      splitTextToSize: vi.fn((s) => [s]),
+      save: vi.fn(),
+    };
+  }),
 }));
 
 import {
@@ -39,6 +58,8 @@ import {
   apiListPatientConsultations,
   apiGetPatientConsultation,
 } from '../services/api/patientPortal.js';
+
+import { generateConsultationPdf } from '../services/pdfExport.js';
 
 import { PatientPortalAuthProvider, usePatientAuth } from '../contexts/PatientPortalAuthContext.jsx';
 import PatientLoginPage from '../pages/portal/PatientLoginPage.jsx';
@@ -113,6 +134,8 @@ beforeEach(() => {
   vi.resetAllMocks();
   // Default: refresh fails → unauthenticated on mount
   apiPatientRefresh.mockResolvedValue(null);
+  // Default: own patient fetch returns failure (non-blocking — pages still load)
+  apiGetOwnPatient.mockResolvedValue({ success: false });
 });
 
 // ===========================================================================
@@ -427,5 +450,198 @@ describe('F. PatientPortalLayout — auth guard', () => {
     await waitFor(() =>
       expect(screen.getByText(/your approved consultations/i)).toBeInTheDocument()
     );
+  });
+});
+
+// ===========================================================================
+// G — Milestone 4: Patient records experience — effective history and security
+// ===========================================================================
+
+describe('G. Milestone 4 — Effective history and access security', () => {
+  const AUTHENTICATED_ACCOUNT = {
+    id:           'cccc',
+    email:        'patient@example.com',
+    displayName:  'Alice Smith',
+    role:         'patient',
+    patientId:    'bbbb',
+    doctorUserId: 'aaaa',
+  };
+
+  const PATIENT = {
+    firstName:       'Alice',
+    lastName:        'Smith',
+    dateOfBirth:     '1990-01-01T00:00:00.000Z',
+    medicalRecordId: 'MR001',
+  };
+
+  function makeConsultation(overrides = {}) {
+    return {
+      _id:              'dddd',
+      consultationDate: '2026-09-01T09:00:00.000Z',
+      encounterType:    'in_person',
+      approvedAt:       '2026-09-01T10:00:00.000Z',
+      status:           'approved',
+      correctionOf:     null,
+      supersededBy:     null,
+      note: {
+        chief_complaint: 'Cough',
+        symptoms:        ['cough'],
+        assessment:      'Viral URTI',
+        follow_up:       '1 week',
+      },
+      ...overrides,
+    };
+  }
+
+  beforeEach(() => {
+    apiPatientRefresh.mockResolvedValue({
+      success: true, accessToken: 'tok', account: AUTHENTICATED_ACCOUNT,
+    });
+  });
+
+  // ── G1: Approved corrections shown with correction notice ────────────────
+  test('G1. approved correction shows correction notice on detail page', async () => {
+    const correction = makeConsultation({ correctionOf: 'orig-id', supersededBy: null });
+    apiGetPatientConsultation.mockResolvedValueOnce({ success: true, consultation: correction });
+    apiGetOwnPatient.mockResolvedValueOnce({ success: true, patient: PATIENT });
+
+    wrapPortal(null, '/portal/consultation/dddd');
+    await waitFor(() => screen.getByText('Cough'));
+
+    expect(screen.getByRole('status')).toHaveTextContent(/corrected version/i);
+  });
+
+  // ── G2: Transcript never rendered on the consultation detail page ─────────
+  test('G2. transcript field is never rendered on consultation detail page', async () => {
+    const consultWithTranscript = {
+      ...makeConsultation(),
+      transcript: 'RAW_TRANSCRIPT_SHOULD_NOT_APPEAR',
+    };
+    apiGetPatientConsultation.mockResolvedValueOnce({
+      success: true, consultation: consultWithTranscript,
+    });
+
+    wrapPortal(null, '/portal/consultation/dddd');
+    await waitFor(() => screen.getByText('Cough'));
+
+    expect(screen.queryByText('RAW_TRANSCRIPT_SHOULD_NOT_APPEAR')).not.toBeInTheDocument();
+  });
+
+  // ── G3: Internal system fields never rendered ─────────────────────────────
+  test('G3. recordingConsentGivenAt is never rendered to patient', async () => {
+    const consultWithConsent = {
+      ...makeConsultation(),
+      recordingConsentGivenAt:     '2026-09-01T08:55:00.000Z',
+      recordingConsentConfirmedBy: 'some-doctor-id',
+    };
+    apiGetPatientConsultation.mockResolvedValueOnce({
+      success: true, consultation: consultWithConsent,
+    });
+
+    wrapPortal(null, '/portal/consultation/dddd');
+    await waitFor(() => screen.getByText('Cough'));
+
+    // Consent timestamps must not appear anywhere in the rendered output
+    expect(screen.queryByText(/2026-09-01T08:55/i)).not.toBeInTheDocument();
+    expect(screen.queryByText('some-doctor-id')).not.toBeInTheDocument();
+  });
+
+  // ── G4: Empty state on history page ──────────────────────────────────────
+  test('G4. history page shows informative empty state when no approved consultations', async () => {
+    apiGetOwnPatient.mockResolvedValueOnce({ success: true, patient: PATIENT });
+    apiListPatientConsultations.mockResolvedValueOnce({ success: true, consultations: [] });
+
+    wrapPortal(null, '/portal/history');
+    await waitFor(() =>
+      expect(screen.getByText(/no approved consultation records/i)).toBeInTheDocument()
+    );
+    // Empty state message should mention that doctor approval is needed
+    expect(screen.getByText(/your doctor will approve/i)).toBeInTheDocument();
+  });
+
+  // ── G5: Multiple records in history list ─────────────────────────────────
+  test('G5. history list shows multiple approved consultations in order', async () => {
+    apiGetOwnPatient.mockResolvedValueOnce({ success: true, patient: PATIENT });
+    apiListPatientConsultations.mockResolvedValueOnce({
+      success: true,
+      consultations: [
+        makeConsultation({ _id: 'c1', note: { chief_complaint: 'First visit' } }),
+        makeConsultation({
+          _id: 'c2',
+          consultationDate: '2026-08-01T09:00:00.000Z',
+          note: { chief_complaint: 'Second visit' },
+        }),
+      ],
+    });
+
+    wrapPortal(null, '/portal/history');
+    await waitFor(() => expect(screen.getByText('First visit')).toBeInTheDocument());
+    expect(screen.getByText('Second visit')).toBeInTheDocument();
+  });
+
+  // ── G6: Correction badge in list ─────────────────────────────────────────
+  test('G6. corrected record shows badge in history list', async () => {
+    apiGetOwnPatient.mockResolvedValueOnce({ success: true, patient: PATIENT });
+    apiListPatientConsultations.mockResolvedValueOnce({
+      success: true,
+      consultations: [makeConsultation({ correctionOf: 'original-id' })],
+    });
+
+    wrapPortal(null, '/portal/history');
+    await waitFor(() => expect(screen.getByText(/corrected record/i)).toBeInTheDocument());
+  });
+
+  // ── G7: Not-found when consultation ID does not match account ─────────────
+  test('G7. consultation not matching patient account shows not-found state', async () => {
+    // Backend returns { success: false } when IDOR check fails (always 404)
+    apiGetPatientConsultation.mockResolvedValueOnce({ success: false });
+
+    wrapPortal(null, '/portal/consultation/wrong-id');
+    await waitFor(() =>
+      expect(screen.getByRole('alert')).toHaveTextContent(/record not found/i)
+    );
+  });
+
+  // ── G8: PDF download button present for approved consultation ─────────────
+  test('G8. PDF download button is present on approved consultation detail', async () => {
+    apiGetPatientConsultation.mockResolvedValueOnce({
+      success: true, consultation: makeConsultation(),
+    });
+    apiGetOwnPatient.mockResolvedValueOnce({ success: true, patient: PATIENT });
+
+    wrapPortal(null, '/portal/consultation/dddd');
+    await waitFor(() => screen.getByText('Cough'));
+
+    expect(
+      screen.getByRole('button', { name: /download pdf/i })
+    ).toBeInTheDocument();
+  });
+
+  // ── G9: PDF download calls generateConsultationPdf ───────────────────────
+  test('G9. clicking Download PDF calls generateConsultationPdf', async () => {
+    apiGetPatientConsultation.mockResolvedValueOnce({
+      success: true, consultation: makeConsultation(),
+    });
+    apiGetOwnPatient.mockResolvedValueOnce({ success: true, patient: PATIENT });
+
+    wrapPortal(null, '/portal/consultation/dddd');
+    await waitFor(() => screen.getByText('Cough'));
+
+    await userEvent.click(screen.getByRole('button', { name: /download pdf/i }));
+
+    await waitFor(() => expect(generateConsultationPdf).toHaveBeenCalled());
+  });
+
+  // ── G10: Patient demographics shown but doctor notes excluded ─────────────
+  test('G10. history page shows patient name but not doctor notes', async () => {
+    const patientWithNotes = { ...PATIENT, notes: 'PRIVATE_DOCTOR_NOTE' };
+    apiGetOwnPatient.mockResolvedValueOnce({ success: true, patient: patientWithNotes });
+    apiListPatientConsultations.mockResolvedValueOnce({ success: true, consultations: [] });
+
+    wrapPortal(null, '/portal/history');
+    await waitFor(() => expect(screen.getByText('Alice Smith')).toBeInTheDocument());
+
+    // Doctor's admin notes must never appear
+    expect(screen.queryByText('PRIVATE_DOCTOR_NOTE')).not.toBeInTheDocument();
   });
 });

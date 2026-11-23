@@ -5796,3 +5796,37 @@
   color: var(--text-sub);
   margin: 8px 0 0;
 }
+
+/* ============================================================
+   Milestone 4 — Patient portal PDF download
+   ============================================================ */
+
+.portal-pdf-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+.portal-pdf-btn {
+  appearance: none;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 7px 16px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--text);
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s;
+}
+.portal-pdf-btn:hover:not(:disabled) {
+  background: var(--surface-hover);
+  border-color: var(--border-mid);
+}
+.portal-pdf-btn:disabled { opacity: 0.55; cursor: not-allowed; }
+.portal-pdf-error {
+  font-size: 12px;
+  color: var(--red, #c0392b);
+  margin: 0;
+}
