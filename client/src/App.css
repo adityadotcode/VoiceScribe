@@ -3561,6 +3561,12 @@
   color: var(--green);
 }
 
+.cd-banner--draft {
+  background: var(--amber-bg);
+  border: 1px solid var(--amber-border);
+  color: var(--amber);
+}
+
 .cd-banner--correction {
   background: var(--amber-bg);
   border: 1px solid var(--amber-border);
