@@ -339,7 +339,16 @@ function AudioRecorder({ onTranscriptReady, onStageChange, consentConfirmed = fa
 
       if (!res.ok || !data.success) {
         applyStatus('error')
-        setErrorMessage(data.message || 'Upload failed. Please try again.')
+        // Distinguish authentication failures from other errors so the
+        // doctor knows to re-authenticate.  apiFetch has already attempted
+        // a refresh and failed — the auth-expired handler will redirect
+        // to /login.  The audio blob is preserved so the doctor can
+        // retry after signing back in (via a new consultation flow).
+        if (res.status === 401) {
+          setErrorMessage('Your session has expired. Please sign in again. Your recording is preserved — start a new consultation after signing back in.')
+        } else {
+          setErrorMessage(data.message || 'Upload failed. Please try again.')
+        }
         return
       }
 
@@ -385,7 +394,11 @@ function AudioRecorder({ onTranscriptReady, onStageChange, consentConfirmed = fa
 
       if (!res.ok || !data.success) {
         applyStatus('error')
-        setErrorMessage(data.message || 'Transcription failed. Please try again.')
+        if (res.status === 401) {
+          setErrorMessage('Your session has expired. Please sign in again to continue.')
+        } else {
+          setErrorMessage(data.message || 'Transcription failed. Please try again.')
+        }
         return
       }
 

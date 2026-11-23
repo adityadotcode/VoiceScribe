@@ -48,6 +48,23 @@ export function getAuthToken() {
 }
 
 // ---------------------------------------------------------------------------
+// Auth-expired handler — called when apiFetch's internal refresh definitively
+// fails.  AuthContext registers a callback via setAuthExpiredHandler() so
+// the React auth state is cleared and PrivateRoute redirects to /login.
+// This bridges the gap between api.js (module-level _accessToken) and
+// AuthContext (React state) without circular imports.
+// ---------------------------------------------------------------------------
+let _onAuthExpired = null;
+
+/**
+ * Register a callback to invoke when the access token cannot be refreshed.
+ * AuthContext calls this on mount; pass null on unmount to deregister.
+ */
+export function setAuthExpiredHandler(fn) {
+  _onAuthExpired = fn;
+}
+
+// ---------------------------------------------------------------------------
 // Authenticated fetch
 // ---------------------------------------------------------------------------
 
@@ -110,6 +127,13 @@ export async function apiFetch(path, opts = {}, ctx = {}) {
   }
 
   if (!refreshed) {
+    // Refresh definitively failed — notify AuthContext so it clears auth
+    // state and PrivateRoute redirects to /login.  This is the key bridge:
+    // without it, the user stays on the page with an expired token and
+    // no way to reauthenticate.
+    if (_onAuthExpired) {
+      try { _onAuthExpired(); } catch { /* never let handler errors break the response */ }
+    }
     // Refresh failed — caller should handle 401 (AuthContext will log out).
     return response;
   }

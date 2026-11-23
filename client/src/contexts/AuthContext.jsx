@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
-import { setAuthToken, clearAuthToken, getAuthToken } from '../api.js';
+import { setAuthToken, clearAuthToken, getAuthToken, setAuthExpiredHandler } from '../api.js';
 import { apiRegister, apiLogin, apiRefresh, apiLogout } from '../services/api/auth.js';
 
 // ---------------------------------------------------------------------------
@@ -63,6 +63,20 @@ export function AuthProvider({ children }) {
         setIsLoading(false);
       }
     })();
+  }, [syncToken]);
+
+  // ── Auth-expired handler registration ─────────────────────────────────────
+  // When apiFetch's internal _doRefresh() fails (access token expired and
+  // refresh cookie also invalid/expired), apiFetch calls _onAuthExpired.
+  // We register a callback that clears auth state so PrivateRoute redirects
+  // to /login — the user gets a clear recovery path instead of being stuck
+  // on the page with an expired token.
+  useEffect(() => {
+    setAuthExpiredHandler(() => {
+      syncToken(null);
+      setUser(null);
+    });
+    return () => setAuthExpiredHandler(null);
   }, [syncToken]);
 
   // ── login ─────────────────────────────────────────────────────────────────
