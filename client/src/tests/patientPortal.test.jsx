@@ -613,7 +613,7 @@ describe('G. Milestone 4 — Effective history and access security', () => {
     await waitFor(() => screen.getByText('Cough'));
 
     expect(
-      screen.getByRole('button', { name: /download pdf/i })
+      screen.getByRole('button', { name: /download.*pdf/i })
     ).toBeInTheDocument();
   });
 
@@ -627,7 +627,7 @@ describe('G. Milestone 4 — Effective history and access security', () => {
     wrapPortal(null, '/portal/consultation/dddd');
     await waitFor(() => screen.getByText('Cough'));
 
-    await userEvent.click(screen.getByRole('button', { name: /download pdf/i }));
+    await userEvent.click(screen.getByRole('button', { name: /download.*pdf/i }));
 
     await waitFor(() => expect(generateConsultationPdf).toHaveBeenCalled());
   });
