@@ -631,6 +631,10 @@ export default function ConsultationDetailPage() {
   //  - it is a correction (correctionOf is set)
   const isCorrectionDraft = isDraft && isCorrection;
 
+  // A regular draft (not a correction) — eligible for review & approve
+  // via the ClinicalNoteReview workflow on /dashboard.
+  const isRegularDraft = isDraft && !isCorrection;
+
   // A consultation is eligible for correction when:
   //  - it is approved, AND
   //  - it has not already been superseded by a correction
@@ -684,6 +688,19 @@ export default function ConsultationDetailPage() {
             {exporting ? 'Generating PDF…' : '⬇ Export PDF'}
           </button>
         )}
+
+        {/* Milestone 5 — Review & approve action for regular (non-correction) drafts.
+            Navigates to /dashboard which loads the consultation into the existing
+            ClinicalNoteReview editor for editing and approval. */}
+        {isRegularDraft && (
+          <button
+            type="button"
+            className="cd-approve-btn"
+            onClick={() => navigate('/dashboard', { state: { openConsultationId: consultationId } })}
+          >
+            ✅ Review & approve
+          </button>
+        )}
       </div>
 
       {/* Phase 6B — export error (non-blocking, shown below header) */}
@@ -697,6 +714,12 @@ export default function ConsultationDetailPage() {
       {isApproved && !isSuperseded && !isCorrection && (
         <div className="cd-banner cd-banner--approved" role="status">
           ✅ Approved note
+        </div>
+      )}
+      {isRegularDraft && (
+        <div className="cd-banner cd-banner--draft" role="status">
+          ✏️ Draft — this consultation has not been approved yet.
+          Click "Review & approve" above to edit and finalize.
         </div>
       )}
       {isApprovedCorrection && (

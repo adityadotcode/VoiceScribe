@@ -195,6 +195,35 @@ function DashboardApp() {
       setRecordingConsentGivenAt(null)
       setStage(STAGE.RECORDING)
     }
+
+    // Milestone 5 — open an existing consultation for review/approval.
+    // Triggered when the doctor clicks "Review & approve" on a draft
+    // consultation in ConsultationDetailPage.  This reuses the existing
+    // ClinicalNoteReview component for editing and approval.
+    if (state?.openConsultationId) {
+      const id = state.openConsultationId
+      apiFetch(`/api/consultations/${id}`)
+        .then((r) => r.json())
+        .then((data) => {
+          if (!data.success) return
+          const c = data.consultation
+          setTranscript(c.transcript ?? '')
+          setNote(c.note ?? BLANK_NOTE)
+          setBedrockFailed(false)
+          setActiveConsultationId(c._id)
+          setIsDemo(false)
+          setDetectedLanguages(c.detectedLanguages ?? [])
+          setSpeakerUtterances(c.speakerUtterances ?? [])
+          setSpeakerRoleMapping(c.speakerRoleMapping ?? {})
+          if (c.patientId) {
+            setActivePatientId(
+              typeof c.patientId === 'object' ? c.patientId.toString() : c.patientId
+            )
+          }
+          setStage(STAGE.REVIEW)
+        })
+        .catch(() => { /* stay on DASHBOARD if fetch fails */ })
+    }
     // Intentionally run only on mount — do not re-run on location changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
